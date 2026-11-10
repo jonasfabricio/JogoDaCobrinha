@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Labirinto</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="scene" id="game-view">
+
+    <div class="hud">
+      <p class="counter">
+        <span>Movimentos</span>
+        <strong id="moves">0</strong>
+      </p>
+      <button type="button" id="restart">Recomeçar</button>
+    </div>
+
+    <div class="board-wrap">
+      <div
+        id="board"
+        class="board"
+        role="application"
+        aria-label="Labirinto de 12 por 12. Use as setas ou W, A, S e D para mover o quadradinho."
+      ></div>
+    </div>
+
+    <div class="legend">
+      <span><i class="swatch you"></i> Você</span>
+      <span><i class="swatch door"></i> Saída</span>
+    </div>
+  </div>
+
+  <section class="win" id="win-view" hidden aria-labelledby="win-title">
+    <div class="confetti" id="confetti" aria-hidden="true"></div>
+    <div class="win-card">
+      <p class="eyebrow">Saída encontrada</p>
+      <h2 id="win-title">Parabéns!</h2>
+      <div class="parade" aria-hidden="true">
+        <span class="mini gold"></span>
+        <span class="trail"></span>
+        <span class="mini teal"></span>
+      </div>
+      <p class="win-text">O quadradinho atravessou o labirinto e chegou na saída.</p>
+      <p class="win-moves"><strong id="final-moves">0</strong> <span id="moves-label">movimentos</span></p>
+      <p class="perfect" id="perfect"></p>
+      <button type="button" id="again">Jogar novamente</button>
+    </div>
+  </section>
+
+  <script src="game.js"></script>
+</body>
+</html>
