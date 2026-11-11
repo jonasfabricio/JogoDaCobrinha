@@ -1,30 +1,58 @@
 const SIZE = 20;
-
-// 0 caminho, 1 parede, 2 saída. O quadradinho começa em (1, 1).
-const MAZE = [
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1],
-  [1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1],
-  [1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1],
-  [1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1],
-  [1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1],
-  [1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1],
-  [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1],
-  [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1],
-  [1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1],
-  [1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-  [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1],
-  [1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1],
-  [1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1],
-  [1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1],
-  [1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-];
-
 const START = { r: 1, c: 1 };
+
+
+function generateMaze(size) {
+
+  const grid = Array.from({ length: size }, () => Array(size).fill(1));
+
+ 
+  function carve(r, c) {
+    grid[r][c] = 0;
+
+    const dirs = [
+      [-2, 0], 
+      [2, 0],  
+      [0, -2], 
+      [0, 2]   
+    ];
+
+
+    for (let i = dirs.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+    }
+
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr;
+      const nc = c + dc;
+
+
+      if (nr > 0 && nr < size - 1 && nc > 0 && nc < size - 1 && grid[nr][nc] === 1) {
+        grid[r + dr / 2][c + dc / 2] = 0;
+        carve(nr, nc);
+      }
+    }
+  }
+ 
+  carve(START.r, START.c);
+
+  const exitPos = size - 2; 
+  grid[exitPos][exitPos] = 2;
+
+  if (grid[exitPos - 1][exitPos] === 1 && grid[exitPos][exitPos - 1] === 1) {
+    if (Math.random() < 0.5) {
+      grid[exitPos - 1][exitPos] = 0;
+    } else {
+      grid[exitPos][exitPos - 1] = 0;
+    }
+  }
+
+  return grid;
+}
+
+let MAZE = generateMaze(SIZE);
+
 const DIRS = {
   up: [-1, 0],
   down: [1, 0],
@@ -67,7 +95,7 @@ let keyTimer = 0;
 const heldKeys = new Set();
 let currentKey = null;
 
-const shortest = shortestPath();
+let shortest = shortestPath();
 
 function shortestPath() {
   const queue = [[START.r, START.c, 0]];
@@ -92,6 +120,9 @@ function shortestPath() {
 }
 
 function buildBoard() {
+  board.replaceChildren();
+  cells.length = 0;      
+
   MAZE.forEach((row, r) => {
     row.forEach((tile, c) => {
       const cell = document.createElement("div");
@@ -179,6 +210,9 @@ function reset() {
   window.clearInterval(keyTimer);
   heldKeys.clear();
   currentKey = null;
+  MAZE = generateMaze(SIZE);
+  shortest = shortestPath();
+
   player = { ...START };
   moves = 0;
   won = false;
@@ -186,7 +220,8 @@ function reset() {
   confetti.replaceChildren();
   winView.hidden = true;
   gameView.hidden = false;
-  renderPlayer();
+
+  buildBoard();
 }
 
 function directionFrom(name) {
@@ -251,3 +286,4 @@ document.querySelector("#restart").addEventListener("click", reset);
 againBtn.addEventListener("click", reset);
 
 buildBoard();
+
