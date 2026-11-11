@@ -1,22 +1,18 @@
 const SIZE = 20;
 const START = { r: 1, c: 1 };
 
-
 function generateMaze(size) {
-
   const grid = Array.from({ length: size }, () => Array(size).fill(1));
 
- 
   function carve(r, c) {
     grid[r][c] = 0;
 
     const dirs = [
-      [-2, 0], 
-      [2, 0],  
-      [0, -2], 
-      [0, 2]   
+      [-2, 0],
+      [+2, 0],
+      [0, -2],
+      [0, +2],
     ];
-
 
     for (let i = dirs.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -27,17 +23,16 @@ function generateMaze(size) {
       const nr = r + dr;
       const nc = c + dc;
 
-
       if (nr > 0 && nr < size - 1 && nc > 0 && nc < size - 1 && grid[nr][nc] === 1) {
         grid[r + dr / 2][c + dc / 2] = 0;
         carve(nr, nc);
       }
     }
   }
- 
+
   carve(START.r, START.c);
 
-  const exitPos = size - 2; 
+  const exitPos = size - 2;
   grid[exitPos][exitPos] = 2;
 
   if (grid[exitPos - 1][exitPos] === 1 && grid[exitPos][exitPos - 1] === 1) {
@@ -55,9 +50,9 @@ let MAZE = generateMaze(SIZE);
 
 const DIRS = {
   up: [-1, 0],
-  down: [1, 0],
+  down: [+1, 0],
   left: [0, -1],
-  right: [0, 1],
+  right: [0, +1],
 };
 
 const KEY_DIRS = {
@@ -79,21 +74,31 @@ const board = document.querySelector("#board");
 const movesEl = document.querySelector("#moves");
 const gameView = document.querySelector("#game-view");
 const winView = document.querySelector("#win-view");
+const loseView = document.querySelector("#lose-view");
 const finalMoves = document.querySelector("#final-moves");
 const movesLabel = document.querySelector("#moves-label");
+const loseMoves = document.querySelector("#lose-moves");
+const loseMovesLabel = document.querySelector("#lose-moves-label");
 const perfectEl = document.querySelector("#perfect");
 const confetti = document.querySelector("#confetti");
 const againBtn = document.querySelector("#again");
+const tryAgainBtn = document.querySelector("#try-again");
 
 const cells = [];
 let player = { ...START };
 let moves = 0;
 let won = false;
 let winTimer = 0;
+let loseTimer = 0;
 let holdTimer = 0;
 let keyTimer = 0;
 const heldKeys = new Set();
 let currentKey = null;
+
+let monster = { r: 1, c: 1 };
+let monsterDir = DIRS.down;
+let monsterTimer = 0;
+let dead = false;
 
 let shortest = shortestPath();
 
@@ -121,7 +126,7 @@ function shortestPath() {
 
 function buildBoard() {
   board.replaceChildren();
-  cells.length = 0;      
+  cells.length = 0;
 
   MAZE.forEach((row, r) => {
     row.forEach((tile, c) => {
@@ -139,7 +144,12 @@ function buildBoard() {
       cells.push(cell);
     });
   });
+
   renderPlayer();
+  spawnMonster();
+  renderMonster();
+  window.clearInterval(monsterTimer);
+  monsterTimer = window.setInterval(moveMonster, 350);
 }
 
 function renderPlayer() {
@@ -152,8 +162,90 @@ function renderPlayer() {
   cells[player.r * SIZE + player.c].appendChild(token);
 }
 
+function spawnMonster() {
+  const validCells = [];
+  for (let r = 1; r < SIZE - 1; r++) {
+    for (let c = 1; c < SIZE - 1; c++) {
+      const dist = Math.abs(r - START.r) + Math.abs(c - START.c);
+      if (MAZE[r][c] === 0 && dist >= 8) {
+        validCells.push({ r, c });
+      }
+    }
+  }
+  monster = validCells[Math.floor(Math.random() * validCells.length)] || { r: SIZE - 2, c: 1 };
+}
+
+function renderMonster() {
+  const current = board.querySelector(".monster");
+  if (current) current.remove();
+
+  const token = document.createElement("span");
+  token.className = "monster";
+  token.setAttribute("aria-label", "Monstro");
+  cells[monster.r * SIZE + monster.c].appendChild(token);
+}
+
+function moveMonster() {
+  if (won || dead) return;
+
+  const possibleDirs = Object.values(DIRS).filter(([dr, dc]) => {
+    const nr = monster.r + dr;
+    const nc = monster.c + dc;
+    return (
+      nr >= 0 &&
+      nc >= 0 &&
+      nr < SIZE &&
+      nc < SIZE &&
+      MAZE[nr][nc] === 0
+    );
+  });
+
+  if (possibleDirs.length === 0) return;
+
+  const [mdr, mdc] = monsterDir;
+  const forwardDirs = possibleDirs.filter(
+    ([dr, dc]) => !(dr === -mdr && dc === -mdc)
+  );
+  const choices = forwardDirs.length > 0 ? forwardDirs : possibleDirs;
+
+  monsterDir = choices[Math.floor(Math.random() * choices.length)];
+  const [nextDr, nextDc] = monsterDir;
+  monster = {
+    r: monster.r + nextDr,
+    c: monster.c + nextDc,
+  };
+
+  renderMonster();
+  checkCollision();
+}
+
+function showLose() {
+  if (loseMoves) loseMoves.textContent = String(moves);
+  if (loseMovesLabel) loseMovesLabel.textContent = moves === 1 ? "movimento" : "movimentos";
+
+  gameView.hidden = true;
+  winView.hidden = true;
+  if (loseView) loseView.hidden = false;
+  if (tryAgainBtn) tryAgainBtn.focus();
+}
+
+function checkCollision() {
+  if (won || dead) return;
+
+  if (player.r === monster.r && player.c === monster.c) {
+    dead = true;
+    window.clearInterval(monsterTimer);
+    window.clearInterval(holdTimer);
+    window.clearInterval(keyTimer);
+    heldKeys.clear();
+    currentKey = null;
+
+    loseTimer = window.setTimeout(showLose, 280);
+  }
+}
+
 function move(dr, dc) {
-  if (won) return;
+  if (won || dead) return;
 
   const nr = player.r + dr;
   const nc = player.c + dc;
@@ -165,8 +257,12 @@ function move(dr, dc) {
   movesEl.textContent = String(moves);
   renderPlayer();
 
+  checkCollision();
+  if (dead) return;
+
   if (MAZE[nr][nc] === 2) {
     won = true;
+    window.clearInterval(monsterTimer);
     winTimer = window.setTimeout(showWin, 320);
   }
 }
@@ -185,6 +281,7 @@ function showWin() {
 
   spawnConfetti();
   gameView.hidden = true;
+  if (loseView) loseView.hidden = true;
   winView.hidden = false;
   againBtn.focus();
 }
@@ -206,19 +303,24 @@ function spawnConfetti() {
 
 function reset() {
   window.clearTimeout(winTimer);
+  window.clearTimeout(loseTimer);
   window.clearInterval(holdTimer);
   window.clearInterval(keyTimer);
+  window.clearInterval(monsterTimer);
   heldKeys.clear();
   currentKey = null;
+
   MAZE = generateMaze(SIZE);
   shortest = shortestPath();
 
   player = { ...START };
   moves = 0;
   won = false;
+  dead = false;
   movesEl.textContent = "0";
   confetti.replaceChildren();
   winView.hidden = true;
+  if (loseView) loseView.hidden = true;
   gameView.hidden = false;
 
   buildBoard();
@@ -284,6 +386,6 @@ window.addEventListener("blur", () => {
 
 document.querySelector("#restart").addEventListener("click", reset);
 againBtn.addEventListener("click", reset);
+if (tryAgainBtn) tryAgainBtn.addEventListener("click", reset);
 
 buildBoard();
-

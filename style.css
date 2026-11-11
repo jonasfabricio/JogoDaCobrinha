@@ -366,6 +366,16 @@ h1 { font-size: clamp(2.4rem, 6vw, 3.4rem); }
   color: #6d6256;
 }
 
+.monster {
+  width: 72%;
+  height: 72%;
+  background-color: #e63946;
+  border-radius: 35% 35% 15% 15%;
+  box-shadow: 0 0 8px rgba(230, 57, 70, 0.7);
+  display: block;
+  margin: auto;
+}
+
 #again {
   background: #2a2118;
   color: #fff8ee;
