@@ -95,8 +95,8 @@ let keyTimer = 0;
 const heldKeys = new Set();
 let currentKey = null;
 
-let monster = { r: 1, c: 1 };
-let monsterDir = DIRS.down;
+let monsters = [];
+let monsterCount = 1;
 let monsterTimer = 0;
 let dead = false;
 
@@ -146,10 +146,10 @@ function buildBoard() {
   });
 
   renderPlayer();
-  spawnMonster();
-  renderMonster();
+  spawnMonsters();
+  renderMonsters();
   window.clearInterval(monsterTimer);
-  monsterTimer = window.setInterval(moveMonster, 350);
+  monsterTimer = window.setInterval(moveMonsters, 350);
 }
 
 function renderPlayer() {
@@ -162,7 +162,7 @@ function renderPlayer() {
   cells[player.r * SIZE + player.c].appendChild(token);
 }
 
-function spawnMonster() {
+function spawnMonsters() {
   const validCells = [];
   for (let r = 1; r < SIZE - 1; r++) {
     for (let c = 1; c < SIZE - 1; c++) {
@@ -172,51 +172,84 @@ function spawnMonster() {
       }
     }
   }
-  monster = validCells[Math.floor(Math.random() * validCells.length)] || { r: SIZE - 2, c: 1 };
+
+  // Embaralha as células válidas para não nascerem no mesmo lugar
+  for (let i = validCells.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [validCells[i], validCells[j]] = [validCells[j], validCells[i]];
+  }
+
+  monsters = [];
+  const total = Math.min(monsterCount, validCells.length);
+  for (let i = 0; i < total; i++) {
+    monsters.push({
+      r: validCells[i].r,
+      c: validCells[i].c,
+      dir: DIRS.down,
+    });
+  }
 }
 
-function renderMonster() {
-  const current = board.querySelector(".monster");
-  if (current) current.remove();
+function renderMonsters() {
+  board.querySelectorAll(".monster").forEach((el) => el.remove());
 
-  const token = document.createElement("span");
-  token.className = "monster";
-  token.setAttribute("aria-label", "Monstro");
-  cells[monster.r * SIZE + monster.c].appendChild(token);
+  monsters.forEach((m) => {
+    const token = document.createElement("span");
+    token.className = "monster";
+    token.setAttribute("aria-label", "Monstro");
+    cells[m.r * SIZE + m.c].appendChild(token);
+  });
 }
 
-function moveMonster() {
+function moveMonsters() {
   if (won || dead) return;
 
-  const possibleDirs = Object.values(DIRS).filter(([dr, dc]) => {
-    const nr = monster.r + dr;
-    const nc = monster.c + dc;
-    return (
-      nr >= 0 &&
-      nc >= 0 &&
-      nr < SIZE &&
-      nc < SIZE &&
-      MAZE[nr][nc] === 0
+  monsters.forEach((m) => {
+    const possibleDirs = Object.values(DIRS).filter(([dr, dc]) => {
+      const nr = m.r + dr;
+      const nc = m.c + dc;
+      return (
+        nr >= 0 &&
+        nc >= 0 &&
+        nr < SIZE &&
+        nc < SIZE &&
+        MAZE[nr][nc] === 0
+      );
+    });
+
+    if (possibleDirs.length === 0) return;
+
+    const [mdr, mdc] = m.dir;
+    const forwardDirs = possibleDirs.filter(
+      ([dr, dc]) => !(dr === -mdr && dc === -mdc)
     );
+    const choices = forwardDirs.length > 0 ? forwardDirs : possibleDirs;
+
+    m.dir = choices[Math.floor(Math.random() * choices.length)];
+    const [nextDr, nextDc] = m.dir;
+    m.r += nextDr;
+    m.c += nextDc;
   });
 
-  if (possibleDirs.length === 0) return;
-
-  const [mdr, mdc] = monsterDir;
-  const forwardDirs = possibleDirs.filter(
-    ([dr, dc]) => !(dr === -mdr && dc === -mdc)
-  );
-  const choices = forwardDirs.length > 0 ? forwardDirs : possibleDirs;
-
-  monsterDir = choices[Math.floor(Math.random() * choices.length)];
-  const [nextDr, nextDc] = monsterDir;
-  monster = {
-    r: monster.r + nextDr,
-    c: monster.c + nextDc,
-  };
-
-  renderMonster();
+  renderMonsters();
   checkCollision();
+}
+
+function checkCollision() {
+  if (won || dead) return;
+
+  const hit = monsters.some((m) => m.r === player.r && m.c === player.c);
+  if (hit) {
+    dead = true;
+    monsterCount = 1; // Volta para 1 monstro se morrer
+    window.clearInterval(monsterTimer);
+    window.clearInterval(holdTimer);
+    window.clearInterval(keyTimer);
+    heldKeys.clear();
+    currentKey = null;
+
+    loseTimer = window.setTimeout(showLose, 280);
+  }
 }
 
 function showLose() {
@@ -227,21 +260,6 @@ function showLose() {
   winView.hidden = true;
   if (loseView) loseView.hidden = false;
   if (tryAgainBtn) tryAgainBtn.focus();
-}
-
-function checkCollision() {
-  if (won || dead) return;
-
-  if (player.r === monster.r && player.c === monster.c) {
-    dead = true;
-    window.clearInterval(monsterTimer);
-    window.clearInterval(holdTimer);
-    window.clearInterval(keyTimer);
-    heldKeys.clear();
-    currentKey = null;
-
-    loseTimer = window.setTimeout(showLose, 280);
-  }
 }
 
 function move(dr, dc) {
@@ -268,6 +286,7 @@ function move(dr, dc) {
 }
 
 function showWin() {
+  monsterCount += 1;
   finalMoves.textContent = String(moves);
   movesLabel.textContent = moves === 1 ? "movimento" : "movimentos";
 
@@ -385,6 +404,15 @@ window.addEventListener("blur", () => {
 });
 
 document.querySelector("#restart").addEventListener("click", reset);
+againBtn.addEventListener("click", reset);
+if (tryAgainBtn) tryAgainBtn.addEventListener("click", reset);
+
+buildBoard();
+
+document.querySelector("#restart").addEventListener("click", () => {
+  monsterCount = 1;
+  reset();
+});
 againBtn.addEventListener("click", reset);
 if (tryAgainBtn) tryAgainBtn.addEventListener("click", reset);
 
