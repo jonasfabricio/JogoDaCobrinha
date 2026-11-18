@@ -32,6 +32,7 @@
   </header>
 
   <div id="toast" class="toast"></div>
+  <div id="ach-toast" class="ach-toast" role="status"><span class="ach-icon"></span><div><small></small><b></b></div></div>
 
   <div class="pad" aria-label="Controles">
     <button type="button" data-dir="0" class="up">▲</button>
@@ -52,6 +53,10 @@
   <aside id="me-panel" class="panel me-panel" hidden>
     <p class="panel-title">Seu recorde</p>
     <p class="me-best"><strong id="me-best">0</strong><span id="me-level">nível —</span></p>
+    <div class="ach">
+      <div class="ach-head"><span>Conquistas</span><span id="ach-count">0/9</span></div>
+      <ul id="ach-list" class="ach-list"></ul>
+    </div>
     <div class="me-account">
       <span id="me-email" class="me-email"></span>
       <button type="button" id="logout" class="link">Sair</button>
@@ -88,6 +93,7 @@
 
   <script src="account.js"></script>
   <script src="audio.js"></script>
+  <script src="achievements.js"></script>
   <script src="podium.js"></script>
   <script src="game.js"></script>
 </body>

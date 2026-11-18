@@ -38,7 +38,19 @@ db.exec(`
     level      INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS achievements (
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code        TEXT    NOT NULL,
+    unlocked_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, code)
+  );
 `);
+
+// Lista fechada de conquistas aceitas (o catálogo com nomes e ícones fica em achievements.js).
+const ACHIEVEMENTS = new Set([
+  "primeira_fuga", "explorador", "mestre", "intocavel", "colecionador",
+  "em_chamas", "esmagador", "sem_medo", "relampago",
+]);
 db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(Date.now());
 
 /* ---------- Senhas (scrypt + salt aleatório) ---------- */
@@ -167,6 +179,15 @@ const routes = {
       ORDER BY records.best DESC, records.updated_at ASC LIMIT 3`).all()
       .map((row) => ({ name: nickname(row.email), best: row.best, level: row.level, you: row.id === me?.id }));
   },
+
+  // Desbloqueia uma conquista do jogador logado (repetir não duplica).
+  "POST /api/achievements": (req, res, body) => {
+    const user = requireUser(req);
+    const code = String(body?.code ?? "");
+    if (!ACHIEVEMENTS.has(code)) throw new HttpError(400, "Conquista desconhecida.");
+    db.prepare("INSERT OR IGNORE INTO achievements (user_id, code, unlocked_at) VALUES (?, ?, ?)").run(user.id, code, Date.now());
+    return profile(user);
+  },
 };
 
 const nickname = (email) => email.split("@")[0].slice(0, 3) + "•••";
@@ -179,11 +200,12 @@ function requireUser(req) {
 
 function profile(user) {
   const record = db.prepare("SELECT best, level FROM records WHERE user_id = ?").get(user.id);
-  return { email: user.email, best: record?.best ?? 0, level: record?.level ?? 0 };
+  const achievements = db.prepare("SELECT code FROM achievements WHERE user_id = ? ORDER BY unlocked_at").all(user.id).map((a) => a.code);
+  return { email: user.email, best: record?.best ?? 0, level: record?.level ?? 0, achievements };
 }
 
 /* ---------- Arquivos do jogo (lista fechada: nunca serve o banco nem o código do servidor) ---------- */
-const STATIC = { "/": "index.html", "/index.html": "index.html", "/style.css": "style.css", "/game.js": "game.js", "/account.js": "account.js", "/audio.js": "audio.js", "/podium.js": "podium.js" };
+const STATIC = { "/": "index.html", "/index.html": "index.html", "/style.css": "style.css", "/game.js": "game.js", "/account.js": "account.js", "/audio.js": "audio.js", "/achievements.js": "achievements.js", "/podium.js": "podium.js" };
 const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
 
 function sendJson(res, status, data) {
