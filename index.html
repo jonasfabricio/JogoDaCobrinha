@@ -2,58 +2,51 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Labirinto</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Labirinto 3D</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 <body>
-  <div class="scene" id="game-view">
+  <canvas id="scene"></canvas>
+  <div id="flash" class="flash"></div>
 
-    <div class="hud">
-      <p class="counter">
-        <span>Movimentos</span>
-        <strong id="moves">0</strong>
-      </p>
-      <button type="button" id="restart">Recomeçar</button>
-    </div>
+  <header class="hud">
+    <div class="stat"><span>Nível</span><strong id="level">1</strong></div>
+    <div class="stat"><span>Tempo</span><strong id="time">0:00</strong></div>
+    <div class="stat"><span>Cristais</span><strong id="gems">0/0</strong></div>
+    <div class="stat"><span>Pontos</span><strong id="score">0</strong></div>
+    <div class="stat"><span>Vidas</span><strong id="lives" class="lives">♥♥♥</strong></div>
+    <button type="button" id="restart" class="icon" title="Recomeçar do nível 1">↻</button>
+  </header>
 
-    <div class="board-wrap">
-      <div
-        id="board"
-        class="board"
-        role="application"
-        aria-label="Labirinto de 12 por 12. Use as setas ou W, A, S e D para mover o quadradinho."
-      ></div>
-    </div>
+  <div id="toast" class="toast"></div>
 
-    <div class="legend">
-      <span><i class="swatch you"></i> Você</span>
-      <span><i class="swatch door"></i> Saída</span>
-    </div>
+  <div class="pad" aria-label="Controles">
+    <button type="button" data-dir="0" class="up">▲</button>
+    <button type="button" data-dir="2" class="left">◀</button>
+    <button type="button" data-dir="1" class="down">▼</button>
+    <button type="button" data-dir="3" class="right">▶</button>
   </div>
 
-  <section class="win" id="win-view" hidden aria-labelledby="win-title">
-    <div class="confetti" id="confetti" aria-hidden="true"></div>
-    <div class="win-card">
-      <p class="eyebrow">Saída encontrada</p>
-      <h2 id="win-title">Parabéns!</h2>
-      <div class="parade" aria-hidden="true">
-        <span class="mini gold"></span>
-        <span class="trail"></span>
-        <span class="mini teal"></span>
-      </div>
-      <p class="win-text">O quadradinho atravessou o labirinto e chegou na saída.</p>
-      <p class="win-moves"><strong id="final-moves">0</strong> <span id="moves-label">movimentos</span></p>
-      <p class="perfect" id="perfect"></p>
-      <button type="button" id="again">Jogar novamente</button>
+  <section id="overlay" class="overlay">
+    <div class="card">
+      <p class="eyebrow" id="ov-eyebrow"></p>
+      <h1 id="ov-title"></h1>
+      <div id="ov-text" class="ov-text"></div>
+      <button type="button" id="ov-btn"></button>
     </div>
   </section>
-  <section id="lose-view" hidden>
-    <h2>💀 Você foi pego!</h2>
-    <p>O monstro encostou em você após <strong id="lose-moves">0</strong> <span id="lose-moves-label">movimentos</span>.</p>
-    <button id="try-again" type="button" style="color: #e63946;">Tentar novamente</button>
-  </section>
 
-  <script src="game.js"></script>
+  <script type="module" src="game.js"></script>
 </body>
 </html>
