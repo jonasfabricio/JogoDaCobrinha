@@ -183,7 +183,7 @@ function profile(user) {
 }
 
 /* ---------- Arquivos do jogo (lista fechada: nunca serve o banco nem o código do servidor) ---------- */
-const STATIC = { "/": "index.html", "/index.html": "index.html", "/style.css": "style.css", "/game.js": "game.js", "/account.js": "account.js", "/podium.js": "podium.js" };
+const STATIC = { "/": "index.html", "/index.html": "index.html", "/style.css": "style.css", "/game.js": "game.js", "/account.js": "account.js", "/audio.js": "audio.js", "/podium.js": "podium.js" };
 const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
 
 function sendJson(res, status, data) {
