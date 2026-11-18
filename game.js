@@ -376,6 +376,7 @@ function startLevel() {
   tickAcc = 0;
   state.running = true;
   $("#overlay").hidden = true;
+  Sfx.music(state.dark ? "dark" : "normal");
   toast(state.dark ? `🌑 Nível ${level} no escuro · só sua lanterna ilumina` : `Nível ${level} · ${N}×${N}`);
   hud();
 }
@@ -430,8 +431,8 @@ function move(i, now = performance.now()) {
     list.splice(k, 1);
     return true;
   };
-  if (take(state.gems)) { state.gemsGot++; addCombo(now, 50, "💎"); }
-  if (take(state.powers)) { state.frozenUntil = now + 5000; toast("❄ Monstros congelados! Esmague-os!"); }
+  if (take(state.gems)) { state.gemsGot++; addCombo(now, 50, "💎"); Sfx.gem(state.combo); }
+  if (take(state.powers)) { state.frozenUntil = now + 5000; toast("❄ Monstros congelados! Esmague-os!"); Sfx.power(); }
 
   const mon = state.monsters.find((m) => m.r === r && m.c === c);
   if (mon) collide(mon, now);
@@ -441,12 +442,14 @@ function move(i, now = performance.now()) {
     state.hasKey = true;
     setExitLocked(false);
     toast("🔑 Chave encontrada! O portal abriu");
+    Sfx.key();
   }
   if (state.running && state.maze[r][c] === EXIT) {
     if (state.hasKey) win(now);
     else if (now > lockedToastUntil) {
       lockedToastUntil = now + 1000; // não repete o aviso a cada passo
       toast("🔒 Portal trancado: encontre a chave!");
+      Sfx.locked();
     }
   }
   hud();
@@ -482,6 +485,7 @@ function tickMonsters(now) {
 function collide(mon, now) {
   if (frozen(now)) {
     addCombo(now, 200, "💥");
+    Sfx.smash();
     const spot = freeCells(Math.max(8, state.N * 0.5))[0];
     if (spot) { Object.assign(mon, spot); place(mon.group, spot.r, spot.c, 3); }
     return;
@@ -491,6 +495,7 @@ function collide(mon, now) {
   state.lives--;
   shake = 0.6;
   resetCombo(); // levar dano quebra o combo
+  Sfx.hurt();
   const flash = $("#flash");
   flash.classList.add("on");
   requestAnimationFrame(() => requestAnimationFrame(() => flash.classList.remove("on")));
@@ -519,6 +524,7 @@ function resetCombo() {
 
 function win(now) {
   state.running = false;
+  Sfx.win();
   keysDown.length = 0;
   const secs = Math.floor((now - state.startTime) / 1000);
   const timeBonus = Math.max(0, 300 - secs * 5);
@@ -541,6 +547,7 @@ function win(now) {
 
 function gameOver() {
   state.running = false;
+  Sfx.gameOver();
   keysDown.length = 0;
   const record = state.score > state.runStartBest;
   saveProgress();
@@ -602,10 +609,11 @@ function overlay(eyebrow, title, html, btn, action) {
   $("#ov-btn").textContent = btn;
   overlayAction = action;
   $("#overlay").hidden = false;
+  Sfx.music(null);
   $("#ov-btn").focus();
 }
-$("#ov-btn").addEventListener("click", () => overlayAction?.());
-$("#restart").addEventListener("click", (e) => { e.currentTarget.blur(); newGame(); });
+$("#ov-btn").addEventListener("click", () => { Sfx.unlock(); overlayAction?.(); });
+$("#restart").addEventListener("click", (e) => { e.currentTarget.blur(); Sfx.unlock(); newGame(); });
 
 /* ---------- Controles ----------
    - keysDown guarda TODAS as direções seguradas, na ordem (a mais recente no fim).
@@ -642,6 +650,7 @@ const releaseAll = () => (keysDown.length = 0);
 
 addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return; // não roubar teclas enquanto digita email/senha
+  if (e.key.toLowerCase() === "m" && !e.repeat) return Sfx.toggleMute();
   const i = KEYS[e.key.toLowerCase()];
   if (i === undefined) return;
   e.preventDefault();

@@ -408,3 +408,8 @@ button.link:hover { text-decoration: underline; transform: none; box-shadow: non
 .key-icon.need { display: inline-block; }
 .key-icon.got { filter: none; opacity: 1; animation: key-got 0.6s cubic-bezier(0.2, 1.6, 0.4, 1); }
 @keyframes key-got { 40% { transform: scale(1.6) rotate(-15deg); } }
+
+/* ---------- Botão de som ---------- */
+button.ghost-icon { background: rgba(56, 189, 248, 0.1); border: 1px solid var(--line); box-shadow: none; font-size: 17px; }
+button.ghost-icon:hover { background: rgba(56, 189, 248, 0.2); box-shadow: none; }
+.hud button.icon + button.icon { margin-left: 4px; }
