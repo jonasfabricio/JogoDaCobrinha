@@ -56,7 +56,7 @@ function generateMaze(n) {
 
 /* ---------- Estado ---------- */
 const state = {
-  level: 1, lives: 3, score: 0, best: loadBest(),
+  level: 1, lives: 3, score: 0, best: 0, runStartBest: 0,
   N: 0, maze: null, running: false,
   player: { r: 1, c: 1 },
   monsters: [], gems: [], powers: [], gemsTotal: 0, gemsGot: 0,
@@ -64,8 +64,11 @@ const state = {
 };
 let held = null, nextMoveAt = 0, tickAcc = 0, camH = 30, shake = 0;
 
-function loadBest() { try { return Number(localStorage.getItem("labirinto-best")) || 0; } catch { return 0; } }
-function saveBest() { try { localStorage.setItem("labirinto-best", String(state.best)); } catch {} }
+// Recorde fica no servidor, ligado à conta do jogador.
+function saveProgress() {
+  if (state.score > state.best) state.best = state.score;
+  Account.saveScore(state.score, state.level);
+}
 
 /* ---------- Three.js ---------- */
 const renderer = new THREE.WebGLRenderer({ canvas: $("#scene"), antialias: true });
@@ -380,6 +383,8 @@ function win(now) {
   const levelBonus = 300 + state.level * 100;
   const allGems = state.gemsGot === state.gemsTotal ? 500 : 0;
   state.score += timeBonus + levelBonus + allGems;
+  if (state.score > state.best) toast("🏆 Novo recorde!");
+  saveProgress();
   hud();
   setTimeout(() => overlay(
     `Nível ${state.level} concluído`,
@@ -394,8 +399,8 @@ function win(now) {
 function gameOver() {
   state.running = false;
   held = null;
-  const record = state.score > state.best;
-  if (record) { state.best = state.score; saveBest(); }
+  const record = state.score > state.runStartBest;
+  saveProgress();
   hud();
   setTimeout(() => overlay(
     record ? "🏆 Novo recorde!" : "Fim de jogo",
@@ -407,7 +412,8 @@ function gameOver() {
 }
 
 function newGame() {
-  Object.assign(state, { level: 1, lives: 3, score: 0 });
+  if (state.score > 0) saveProgress(); // recomeçar no meio não perde o recorde
+  Object.assign(state, { level: 1, lives: 3, score: 0, runStartBest: state.best });
   startLevel();
 }
 
@@ -545,7 +551,7 @@ renderer.setAnimationLoop(() => {
 /* ---------- Início ---------- */
 startLevel(); // labirinto de fundo atrás do menu
 state.running = false;
-Account.ready.then(() => overlay(
+Account.ready.then((user) => (state.best = user.best)).then(() => overlay(
   "Labirinto 3D",
   "Escape do labirinto",
   `Use <b>setas</b> / <b>WASD</b> (ou deslize no celular) para chegar ao <b>portal dourado</b>.<br>
