@@ -62,7 +62,10 @@ const state = {
   monsters: [], gems: [], powers: [], gemsTotal: 0, gemsGot: 0,
   frozenUntil: 0, invulnUntil: 0, startTime: 0,
 };
-let held = null, nextMoveAt = 0, tickAcc = 0, camH = 30, shake = 0;
+let queued = null, queuedAt = 0, tickAcc = 0, camH = 30, shake = 0;
+const STEP_MS = 130;  // tempo para atravessar uma casa (um pouco mais lento = mais fácil acertar as curvas)
+const QUEUE_MS = 300; // por quanto tempo uma tecla apertada "antes da curva" continua valendo
+const camTarget = new THREE.Vector3();
 
 // Recorde fica no servidor, ligado à conta do jogador.
 function saveProgress() {
@@ -71,10 +74,11 @@ function saveProgress() {
 }
 
 /* ---------- Three.js ---------- */
-const renderer = new THREE.WebGLRenderer({ canvas: $("#scene"), antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// O antialias do canvas não vale com EffectComposer (ele desenha em render target próprio), então fica desligado.
+const renderer = new THREE.WebGLRenderer({ canvas: $("#scene"), antialias: false, powerPreference: "high-performance" });
+let pixelRatio = Math.min(devicePixelRatio, 1.5);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
 const scene = new THREE.Scene();
@@ -85,26 +89,54 @@ const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
 scene.add(new THREE.HemisphereLight(0xa5c8ff, 0x0a1430, 1.1));
 const sun = new THREE.DirectionalLight(0xdbeafe, 1.8);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(1024, 1024);
+// A sombra cobre só uma área em volta do jogador e acompanha ele (ver loop).
+const SHADOW_HALF = 12;
+const SHADOW_TEXEL = (SHADOW_HALF * 2) / 1024;
+Object.assign(sun.shadow.camera, { left: -SHADOW_HALF, right: SHADOW_HALF, top: SHADOW_HALF, bottom: -SHADOW_HALF, near: 1, far: 60 });
+sun.shadow.camera.updateProjectionMatrix();
 sun.shadow.bias = -0.0005;
 scene.add(sun, sun.target);
 const playerLight = new THREE.PointLight(0x38bdf8, 4, 7, 1.6);
 scene.add(playerLight);
 
+// Sem MSAA no composer: com ele apareciam linhas nas emendas entre os blocos (e custa mais).
 const composer = new EffectComposer(renderer);
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.45, 0.8);
 composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.45, 0.8));
+composer.addPass(bloom);
 composer.addPass(new OutputPass());
+let useBloom = true;
 
 function resize() {
+  renderer.setPixelRatio(pixelRatio);
   renderer.setSize(innerWidth, innerHeight, false);
+  composer.setPixelRatio(pixelRatio);
   composer.setSize(innerWidth, innerHeight);
+  bloom.setSize((innerWidth * pixelRatio) / 2, (innerHeight * pixelRatio) / 2); // brilho em meia resolução
   camera.aspect = innerWidth / innerHeight;
   camera.fov = camera.aspect < 0.8 ? 65 : 50;
   camera.updateProjectionMatrix();
 }
 addEventListener("resize", resize);
 resize();
+
+// Qualidade adaptativa: se a média passar de ~20 ms por quadro, desce um degrau (nunca sobe de volta).
+const perf = { level: 0, frames: 0, time: 0 };
+function measureFrame(rawDt) {
+  if (!state.running || rawDt > 0.25) return; // ignora menus e a volta de uma aba escondida
+  perf.frames++;
+  perf.time += rawDt;
+  if (perf.time < 2) return;
+  const slow = perf.time / perf.frames > 0.02;
+  perf.frames = perf.time = 0;
+  if (!slow || perf.level >= 3) return;
+  perf.level++;
+  if (perf.level === 1) { pixelRatio = 1; resize(); }
+  if (perf.level === 2) useBloom = false;
+  if (perf.level === 3) sun.castShadow = false;
+  console.info("Qualidade reduzida para manter a fluidez, degrau", perf.level);
+}
 
 const std = (color, emissive = 0x000000, emissiveIntensity = 1, extra = {}) =>
   new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity, roughness: 0.4, metalness: 0.1, ...extra });
@@ -255,13 +287,6 @@ function startLevel() {
   world.add(body, cap, floor, grid, exit);
   world.userData.exit = exit;
 
-  // sombra cobre o labirinto todo
-  const s = N * 0.75;
-  sun.position.set(N / 2 + 8, 22, N / 2 + 6);
-  sun.target.position.set(N / 2, 0, N / 2);
-  Object.assign(sun.shadow.camera, { left: -s, right: s, top: s, bottom: -s, near: 1, far: 80 });
-  sun.shadow.camera.updateProjectionMatrix();
-
   // monstros: quantidade cresce com nível e tamanho; caçadores a partir do nível 2
   const spots = freeCells(Math.max(8, N * 0.6));
   const count = Math.min(1 + Math.floor(level * 0.8) + Math.floor(N / 14), 10, spots.length);
@@ -282,6 +307,9 @@ function startLevel() {
   state.gemsGot = 0;
 
   place(playerMesh, 1, 1, 0.32);
+  camTarget.set(1, 0.32, 1);
+  queued = null;
+  keysDown.length = 0;
   camH = N * 1.4; // câmera começa no alto e mergulha
   state.frozenUntil = state.invulnUntil = 0;
   state.startTime = performance.now();
@@ -293,8 +321,7 @@ function startLevel() {
 }
 
 function addItem(p, g, m) {
-  const mesh = new THREE.Mesh(g, m);
-  mesh.castShadow = true;
+  const mesh = new THREE.Mesh(g, m); // itens pequenos não projetam sombra (economia)
   place(mesh, p.r, p.c, 0.4);
   world.add(mesh);
   return { ...p, mesh };
@@ -307,8 +334,8 @@ const frozen = (now) => now < state.frozenUntil;
 function move(i, now = performance.now()) {
   const p = state.player;
   const r = p.r + DIRS[i][0], c = p.c + DIRS[i][1];
-  if (state.maze[r][c] === WALL) return;
-  p.r = r; p.c = c;
+  if (state.maze[r][c] === WALL) return false;
+  p.r = r; p.c = c; p.dir = i;
   playerMesh.rotation.y = Math.atan2(DIRS[i][1], DIRS[i][0]);
 
   const take = (list) => {
@@ -325,6 +352,7 @@ function move(i, now = performance.now()) {
   if (mon) collide(mon, now);
   if (state.running && state.maze[r][c] === EXIT) win(now);
   hud();
+  return true;
 }
 
 function tickMonsters(now) {
@@ -377,7 +405,7 @@ function collide(mon, now) {
 
 function win(now) {
   state.running = false;
-  held = null;
+  keysDown.length = 0;
   const secs = Math.floor((now - state.startTime) / 1000);
   const timeBonus = Math.max(0, 300 - secs * 5);
   const levelBonus = 300 + state.level * 100;
@@ -398,7 +426,7 @@ function win(now) {
 
 function gameOver() {
   state.running = false;
-  held = null;
+  keysDown.length = 0;
   const record = state.score > state.runStartBest;
   saveProgress();
   hud();
@@ -450,14 +478,38 @@ function overlay(eyebrow, title, html, btn, action) {
 $("#ov-btn").addEventListener("click", () => overlayAction?.());
 $("#restart").addEventListener("click", (e) => { e.currentTarget.blur(); newGame(); });
 
-/* ---------- Controles ---------- */
+/* ---------- Controles ----------
+   - keysDown guarda TODAS as direções seguradas, na ordem (a mais recente no fim).
+     Segurar → e apertar ↑ antes da curva: continua indo para a direita e vira assim que der.
+   - queued: toque rápido feito no meio do passo vale por QUEUE_MS (curva antecipada).
+   - Voltar (direção oposta) é instantâneo, mesmo no meio do passo.
+   - Perdão de curva atrasada: se o jogador acabou de sair do cruzamento (< 35% do caminho)
+     e você aperta a direção que estava livre lá, ele volta e vira. */
+const keysDown = [];
+let playerLeft = 0; // quanto falta (em casas) para o mesh chegar na casa lógica
+
 function press(i) {
   if (!state.running) return;
-  held = i;
-  move(i);
-  nextMoveAt = performance.now() + 170;
+  const k = keysDown.indexOf(i);
+  if (k >= 0) keysDown.splice(k, 1);
+  keysDown.push(i);
+  queued = i;
+  queuedAt = performance.now();
+
+  const p = state.player;
+  if (p.dir === undefined || playerLeft <= 0) return; // parado: o loop move no próximo quadro
+  if (i === (p.dir ^ 1)) { if (move(i)) queued = null; return; }
+  if (i === p.dir || playerLeft < 0.65) return;
+  const fromR = p.r - DIRS[p.dir][0], fromC = p.c - DIRS[p.dir][1];
+  if (state.maze[fromR + DIRS[i][0]][fromC + DIRS[i][1]] === WALL) return;
+  p.r = fromR; p.c = fromC; // ainda estava saindo do cruzamento: volta para ele…
+  if (move(i)) queued = null; // …e vira
 }
-const release = (i) => { if (held === i) held = null; };
+function release(i) {
+  const k = keysDown.indexOf(i);
+  if (k >= 0) keysDown.splice(k, 1);
+}
+const releaseAll = () => (keysDown.length = 0);
 
 addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return; // não roubar teclas enquanto digita email/senha
@@ -467,7 +519,7 @@ addEventListener("keydown", (e) => {
   if (!e.repeat) press(i);
 });
 addEventListener("keyup", (e) => release(KEYS[e.key.toLowerCase()]));
-addEventListener("blur", () => (held = null));
+addEventListener("blur", releaseAll);
 
 document.querySelectorAll(".pad button").forEach((b) => {
   const i = Number(b.dataset.dir);
@@ -483,31 +535,59 @@ $("#scene").addEventListener("pointerup", (e) => {
   const dx = e.clientX - touchStart.x, dy = e.clientY - touchStart.y;
   touchStart = null;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
-  press(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 3 : 2) : (dy > 0 ? 1 : 0));
-  held = null;
+  const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 3 : 2) : (dy > 0 ? 1 : 0);
+  press(dir);
+  release(dir); // swipe é um toque: vale como curva antecipada, não como tecla segurada
 });
 
 /* ---------- Loop ---------- */
 const clock = new THREE.Clock();
-const camTarget = new THREE.Vector3();
+const followPoint = new THREE.Vector3();
+const timeEl = $("#time");
+let lastSecs = -1;
+
+// Anda em velocidade constante até (x, z); longe demais (respawn) teleporta. Devolve a distância restante.
+function approach(pos, x, z, maxStep) {
+  const dx = x - pos.x, dz = z - pos.z, d = Math.hypot(dx, dz);
+  if (d <= maxStep || d > 2.5) { pos.x = x; pos.z = z; return 0; }
+  pos.x += (dx / d) * maxStep;
+  pos.z += (dz / d) * maxStep;
+  return d - maxStep;
+}
+
+// Ao chegar (quase) na casa: primeiro a curva pedida (enquanto a tecla está segurada ou foi
+// tocada há pouco), depois as teclas seguradas, da mais recente para a mais antiga.
+function nextStep(now) {
+  if (queued !== null) {
+    const valid = keysDown.includes(queued) || now - queuedAt < QUEUE_MS;
+    if (valid && move(queued, now)) { queued = null; return; }
+    if (!valid) queued = null;
+  }
+  for (let k = keysDown.length - 1; k >= 0; k--) if (move(keysDown[k], now)) return;
+}
 
 renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const rawDt = clock.getDelta();
+  const dt = Math.min(rawDt, 0.05);
+  measureFrame(rawDt);
   const t = clock.elapsedTime;
   const now = performance.now();
   const k = (speed) => 1 - Math.exp(-dt * speed);
 
   if (state.running) {
-    if (held !== null && now >= nextMoveAt) { move(held, now); nextMoveAt = now + 115; }
     tickAcc += dt * 1000;
     if (tickAcc >= tickMs()) { tickAcc = 0; tickMonsters(now); }
-    $("#time").textContent = fmt(Math.floor((now - state.startTime) / 1000));
+    const secs = Math.floor((now - state.startTime) / 1000);
+    if (secs !== lastSecs) { lastSecs = secs; timeEl.textContent = fmt(secs); }
   }
 
-  // jogador
+  // jogador: desliza em velocidade constante e emenda o próximo passo sem parar
   const p = state.player;
-  playerMesh.position.x += (p.c - playerMesh.position.x) * k(20);
-  playerMesh.position.z += (p.r - playerMesh.position.z) * k(20);
+  playerLeft = approach(playerMesh.position, p.c, p.r, (dt * 1000) / STEP_MS);
+  if (state.running && playerLeft < 0.1) {
+    nextStep(now);
+    playerLeft = Math.hypot(p.c - playerMesh.position.x, p.r - playerMesh.position.z);
+  }
   playerMesh.position.y = 0.32 + Math.sin(t * 5) * 0.04;
   halo.rotation.z = t * 2;
   playerMesh.visible = now > state.invulnUntil || Math.floor(now / 90) % 2 === 0;
@@ -516,20 +596,23 @@ renderer.setAnimationLoop(() => {
   // monstros
   const isFrozen = frozen(now);
   const blink = isFrozen && state.frozenUntil - now < 1200 && Math.floor(now / 120) % 2;
+  const monsterStep = (dt * 1000) / tickMs();
   state.monsters.forEach((m, i) => {
     const g = m.group;
-    g.position.x += (m.c - g.position.x) * k(14);
-    g.position.z += (m.r - g.position.z) * k(14);
+    approach(g.position, m.c, m.r, monsterStep);
     g.position.y += (0.36 + (isFrozen ? 0 : Math.abs(Math.sin(t * 8 + i)) * 0.12) - g.position.y) * k(12);
     const turn = Math.atan2(DIRS[m.dir][1], DIRS[m.dir][0]) - g.rotation.y;
     g.rotation.y += Math.atan2(Math.sin(turn), Math.cos(turn)) * k(12);
-    m.body.material = isFrozen && !blink ? mat.frozen : m.hunter ? mat.hunter : mat.wanderer;
+    const look = isFrozen && !blink ? mat.frozen : m.hunter ? mat.hunter : mat.wanderer;
+    if (m.body.material !== look) m.body.material = look;
   });
 
   // itens e saída
-  for (const it of [...state.gems, ...state.powers]) {
-    it.mesh.rotation.y = t * 2;
-    it.mesh.position.y = 0.4 + Math.sin(t * 3 + it.r + it.c) * 0.06;
+  for (const list of [state.gems, state.powers]) {
+    for (const it of list) {
+      it.mesh.rotation.y = t * 2;
+      it.mesh.position.y = 0.4 + Math.sin(t * 3 + it.r + it.c) * 0.06;
+    }
   }
   const exit = world.userData.exit;
   if (exit) { exit.userData.ring.rotation.y = t * 1.5; exit.userData.ring.rotation.x = Math.sin(t) * 0.3; }
@@ -537,7 +620,14 @@ renderer.setAnimationLoop(() => {
   // câmera segue o jogador, com mergulho inicial e tremor ao levar dano
   camH += (9 - camH) * k(1.6);
   shake *= Math.exp(-dt * 6);
-  camTarget.lerp(playerMesh.position, k(8));
+  // segue só x/z: o "quique" do jogador não balança a câmera
+  camTarget.lerp(followPoint.set(playerMesh.position.x, 0.32, playerMesh.position.z), k(8));
+
+  // sombra acompanha o jogador, alinhada à grade de texels para não "tremer"
+  const sx = Math.round(camTarget.x / SHADOW_TEXEL) * SHADOW_TEXEL;
+  const sz = Math.round(camTarget.z / SHADOW_TEXEL) * SHADOW_TEXEL;
+  sun.position.set(sx + 8, 22, sz + 6);
+  sun.target.position.set(sx, 0, sz);
   camera.position.set(
     camTarget.x + (Math.random() - 0.5) * shake,
     camTarget.y + camH,
@@ -545,7 +635,8 @@ renderer.setAnimationLoop(() => {
   );
   camera.lookAt(camTarget);
 
-  composer.render();
+  if (useBloom) composer.render();
+  else renderer.render(scene, camera);
 });
 
 /* ---------- Início ---------- */

@@ -5,6 +5,7 @@
   --accent: #38bdf8;
   --accent-2: #2563eb;
   --glass: rgba(14, 30, 70, 0.55);
+  --glass-solid: rgba(12, 26, 62, 0.86); /* painéis sobre o jogo: sem blur, mais opacos */
   --line: rgba(120, 170, 255, 0.22);
   --danger: #ff3d6e;
 }
@@ -35,11 +36,9 @@ html, body {
   gap: 6px;
   align-items: center;
   padding: 8px;
-  background: var(--glass);
+  background: var(--glass-solid);
   border: 1px solid var(--line);
   border-radius: 18px;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
   max-width: calc(100vw - 32px);
 }
@@ -85,9 +84,8 @@ button.icon { width: 40px; height: 40px; font-size: 20px; padding: 0; }
   transform: translate(-50%, -10px);
   padding: 10px 18px;
   border-radius: 999px;
-  background: var(--glass);
+  background: var(--glass-solid);
   border: 1px solid var(--line);
-  backdrop-filter: blur(10px);
   font-weight: 600;
   opacity: 0;
   pointer-events: none;
@@ -164,9 +162,8 @@ button.icon { width: 40px; height: 40px; font-size: 20px; padding: 0; }
   gap: 6px;
 }
 .pad button {
-  background: var(--glass);
+  background: var(--glass-solid);
   border: 1px solid var(--line);
-  backdrop-filter: blur(10px);
   box-shadow: none;
   font-size: 18px;
 }
@@ -277,11 +274,9 @@ button.icon { width: 40px; height: 40px; font-size: 20px; padding: 0; }
   top: 16px;
   width: 190px;
   padding: 12px 14px;
-  background: var(--glass);
+  background: var(--glass-solid);
   border: 1px solid var(--line);
   border-radius: 16px;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
 }
 .panel[hidden] { display: none; }
