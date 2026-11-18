@@ -6,6 +6,7 @@ services:
     name: labirinto-3d
     runtime: node
     plan: free
+    region: virginia # leste dos EUA: a região do Render mais perto do Brasil (crie o banco do Turso também na Virgínia)
     buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /
