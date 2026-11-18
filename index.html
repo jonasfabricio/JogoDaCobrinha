@@ -38,7 +38,7 @@
     <button type="button" data-dir="3" class="right">▶</button>
   </div>
 
-  <section id="overlay" class="overlay">
+  <section id="overlay" class="overlay" hidden>
     <div class="card">
       <p class="eyebrow" id="ov-eyebrow"></p>
       <h1 id="ov-title"></h1>
@@ -47,6 +47,36 @@
     </div>
   </section>
 
+  <aside id="me-panel" class="panel me-panel" hidden>
+    <p class="panel-title">Sua conta</p>
+    <p id="me-email" class="me-email"></p>
+    <button type="button" id="logout" class="link">Sair</button>
+  </aside>
+
+  <section id="auth" class="overlay auth" hidden>
+    <form id="auth-form" class="card" novalidate>
+      <p class="eyebrow">Labirinto 3D</p>
+      <h1 id="auth-title">Crie sua conta</h1>
+      <p id="auth-sub" class="auth-sub"></p>
+
+      <label class="field" for="auth-email">Email</label>
+      <input id="auth-email" type="email" autocomplete="email" placeholder="voce@email.com" maxlength="254" required>
+
+      <label class="field" for="auth-password">Senha</label>
+      <div class="pw">
+        <input id="auth-password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+        <button type="button" id="auth-eye" class="eye" aria-pressed="false">Mostrar</button>
+      </div>
+
+      <p id="auth-error" class="auth-error" role="alert"></p>
+      <button type="submit" id="auth-submit">Criar conta</button>
+
+      <div class="divider"><span id="auth-switch-text">Já tem uma conta?</span></div>
+      <button type="button" id="auth-switch" class="secondary">Já tenho uma conta</button>
+    </form>
+  </section>
+
+  <script src="account.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
