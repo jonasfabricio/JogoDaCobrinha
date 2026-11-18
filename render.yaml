@@ -1,0 +1,23 @@
+# Configuração do Render (Blueprint): cria o serviço web gratuito do Labirinto 3D.
+# Os segredos do Turso (TURSO_DATABASE_URL e TURSO_AUTH_TOKEN) NÃO ficam aqui:
+# o Render pede os valores na hora de criar o serviço (sync: false).
+services:
+  - type: web
+    name: labirinto-3d
+    runtime: node
+    plan: free
+    region: virginia # leste dos EUA: a região do Render mais perto do Brasil (crie o banco do Turso também na Virgínia)
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: HOST
+        value: 0.0.0.0 # aceitar conexões de fora (o Render encaminha o tráfego para cá)
+      - key: TRUST_PROXY
+        value: "1" # o Render fica na frente: IP real e HTTPS chegam em X-Forwarded-*
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
