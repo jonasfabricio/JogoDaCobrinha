@@ -1,8 +1,12 @@
-import * as THREE from "three";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+// Script clássico (não-módulo) para funcionar abrindo o index.html direto do disco (file://).
+// O Three.js vem da CDN via import() dinâmico, resolvido pelo importmap do index.html.
+Promise.all([
+  import("three"),
+  import("three/addons/postprocessing/EffectComposer.js"),
+  import("three/addons/postprocessing/RenderPass.js"),
+  import("three/addons/postprocessing/UnrealBloomPass.js"),
+  import("three/addons/postprocessing/OutputPass.js"),
+]).then(([THREE, { EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }]) => {
 
 /* ---------- Utilidades ---------- */
 const $ = (s) => document.querySelector(s);
@@ -105,7 +109,7 @@ const std = (color, emissive = 0x000000, emissiveIntensity = 1, extra = {}) =>
 const mat = {
   floor: std(0x0a1633, 0, 1, { roughness: 0.95 }),
   wall: std(0x1d4ed8, 0x0b2a6b, 0.5, { roughness: 0.3, metalness: 0.25 }),
-  cap: std(0x93c5fd, 0x3b82f6, 1.1),
+  cap: std(0x3b82f6, 0x1d4ed8, 0.9),
   player: std(0xe0f2fe, 0x38bdf8, 1.8),
   halo: std(0x7dd3fc, 0x38bdf8, 2.2),
   wanderer: std(0xa78bfa, 0x6d28d9, 0.9),
@@ -550,3 +554,8 @@ overlay(
   "Jogar",
   newGame,
 );
+}).catch((err) => {
+  document.body.insertAdjacentHTML("beforeend",
+    `<p style="position:fixed;inset:auto 16px 16px;padding:12px;border-radius:12px;background:#7f1d1d;color:#fff">
+      Não foi possível carregar o Three.js (precisa de internet). ${err}</p>`);
+});
