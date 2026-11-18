@@ -89,7 +89,8 @@ scene.background = new THREE.Color(0x050b1f);
 scene.fog = new THREE.Fog(0x050b1f, 16, 42);
 
 const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
-scene.add(new THREE.HemisphereLight(0xa5c8ff, 0x0a1430, 1.1));
+const hemi = new THREE.HemisphereLight(0xa5c8ff, 0x0a1430, 1.1);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xdbeafe, 1.8);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
@@ -102,6 +103,26 @@ sun.shadow.bias = -0.0005;
 scene.add(sun, sun.target);
 const playerLight = new THREE.PointLight(0x38bdf8, 4, 7, 1.6);
 scene.add(playerLight);
+
+// Iluminação normal x nível escuro. No escuro só a "lanterna" do jogador ilumina; cristais, monstros
+// e portal continuam visíveis porque têm brilho próprio (emissivo). No escuro a neblina acompanha a
+// distância da câmera (ver loop). Como a câmera olha de cima, um ponto do chão a h casas do jogador
+// fica só ~h²/(2·dist) mais longe que ele; por isso a faixa da neblina é bem estreita.
+const DARK_FOG = [0, 1.6]; // começa a escurecer junto do jogador e some por completo a ~5-6 casas
+const LIGHTING = {
+  normal: { hemi: 1.1, sun: 1.8, fog: [16, 42], bg: 0x050b1f, lamp: [4, 7], glow: [0.5, 0.9] },
+  dark: { hemi: 0.05, sun: 0.04, fog: null, bg: 0x010309, lamp: [9, 4.5], glow: [0, 0.02] },
+};
+function applyLighting(dark) {
+  const L = dark ? LIGHTING.dark : LIGHTING.normal;
+  hemi.intensity = L.hemi;
+  sun.intensity = L.sun;
+  [mat.wall.emissiveIntensity, mat.cap.emissiveIntensity] = L.glow; // paredes param de brilhar sozinhas
+  if (L.fog) [scene.fog.near, scene.fog.far] = L.fog;
+  scene.fog.color.setHex(L.bg);
+  scene.background.setHex(L.bg);
+  [playerLight.intensity, playerLight.distance] = L.lamp;
+}
 
 // Sem MSAA no composer: com ele apareciam linhas nas emendas entre os blocos (e custa mais).
 const composer = new EffectComposer(renderer);
@@ -245,6 +266,8 @@ function startLevel() {
   const N = (state.N = 11 + 2 * rand((maxN - 11) / 2 + 1)); // tamanho aleatório, teto cresce com o nível
   state.maze = generateMaze(N);
   state.player = { r: 1, c: 1 };
+  state.dark = level >= 3 && level % 3 === 0; // níveis 3, 6, 9… são no escuro
+  applyLighting(state.dark);
 
   // limpa o mundo anterior
   scene.remove(world);
@@ -320,7 +343,7 @@ function startLevel() {
   tickAcc = 0;
   state.running = true;
   $("#overlay").hidden = true;
-  toast(`Nível ${level} · ${N}×${N}`);
+  toast(state.dark ? `🌑 Nível ${level} no escuro · só sua lanterna ilumina` : `Nível ${level} · ${N}×${N}`);
   hud();
 }
 
@@ -428,7 +451,7 @@ function win(now) {
   keysDown.length = 0;
   const secs = Math.floor((now - state.startTime) / 1000);
   const timeBonus = Math.max(0, 300 - secs * 5);
-  const levelBonus = 300 + state.level * 100;
+  const levelBonus = Math.round((300 + state.level * 100) * (state.dark ? 1.5 : 1)); // escuro vale ×1,5
   const allGems = state.gemsGot === state.gemsTotal ? 500 : 0;
   state.score += timeBonus + levelBonus + allGems;
   if (state.score > state.best) toast("🏆 Novo recorde!");
@@ -437,7 +460,7 @@ function win(now) {
   setTimeout(() => overlay(
     `Nível ${state.level} concluído`,
     "Saída encontrada!",
-    row("Tempo", fmt(secs)) + row("Bônus de nível", `+${levelBonus}`) + row("Bônus de tempo", `+${timeBonus}`) +
+    row("Tempo", fmt(secs)) + row(state.dark ? "Bônus de nível (escuro ×1,5)" : "Bônus de nível", `+${levelBonus}`) + row("Bônus de tempo", `+${timeBonus}`) +
       row(`Cristais ${state.gemsGot}/${state.gemsTotal}`, allGems ? "+500 coleção completa!" : "—") +
       row("Maior combo", `×${state.comboMax}`) + row("Pontos", state.score),
     "Próximo nível →",
@@ -656,6 +679,11 @@ renderer.setAnimationLoop(() => {
 
   // câmera segue o jogador, com mergulho inicial e tremor ao levar dano
   camH += (9 - camH) * k(1.6);
+  if (state.dark) {
+    const camDist = camH * Math.hypot(1, 0.55); // distância câmera → jogador
+    scene.fog.near = camDist + DARK_FOG[0];
+    scene.fog.far = camDist + DARK_FOG[1];
+  }
   shake *= Math.exp(-dt * 6);
   // segue só x/z: o "quique" do jogador não balança a câmera
   camTarget.lerp(followPoint.set(playerMesh.position.x, 0.32, playerMesh.position.z), k(8));
