@@ -62,6 +62,7 @@ const state = {
   monsters: [], gems: [], powers: [], gemsTotal: 0, gemsGot: 0,
   frozenUntil: 0, invulnUntil: 0, startTime: 0,
   combo: 1, comboUntil: 0, comboMax: 1,
+  hurtThisLevel: false, smashes: 0, // para as conquistas
 };
 // Combo: coletas seguidas (no máximo COMBO_MS entre uma e outra) multiplicam os pontos, até ×COMBO_MAX.
 const COMBO_MS = 3000, COMBO_MAX = 5;
@@ -372,6 +373,9 @@ function startLevel() {
   camH = N * 1.4; // câmera começa no alto e mergulha
   state.frozenUntil = state.invulnUntil = 0;
   resetCombo();
+  state.hurtThisLevel = false;
+  if (level >= 5) Achievements.unlock("explorador");
+  if (level >= 10) Achievements.unlock("mestre");
   state.startTime = performance.now();
   tickAcc = 0;
   state.running = true;
@@ -486,6 +490,7 @@ function collide(mon, now) {
   if (frozen(now)) {
     addCombo(now, 200, "💥");
     Sfx.smash();
+    if (++state.smashes >= 10) Achievements.unlock("esmagador");
     const spot = freeCells(Math.max(8, state.N * 0.5))[0];
     if (spot) { Object.assign(mon, spot); place(mon.group, spot.r, spot.c, 3); }
     return;
@@ -495,6 +500,7 @@ function collide(mon, now) {
   state.lives--;
   shake = 0.6;
   resetCombo(); // levar dano quebra o combo
+  state.hurtThisLevel = true;
   Sfx.hurt();
   const flash = $("#flash");
   flash.classList.add("on");
@@ -510,6 +516,7 @@ function addCombo(now, base, icon) {
   state.combo = now < state.comboUntil ? Math.min(COMBO_MAX, state.combo + 1) : 1;
   state.comboUntil = now + COMBO_MS;
   state.comboMax = Math.max(state.comboMax, state.combo);
+  if (state.combo >= COMBO_MAX) Achievements.unlock("em_chamas");
   const points = base * state.combo;
   state.score += points;
   toast(state.combo > 1 ? `${icon} +${points}  ×${state.combo}` : `${icon} +${points}`);
@@ -531,6 +538,12 @@ function win(now) {
   const levelBonus = Math.round((300 + state.level * 100) * (state.dark ? 1.5 : 1)); // escuro vale ×1,5
   const allGems = state.gemsGot === state.gemsTotal ? 500 : 0;
   state.score += timeBonus + levelBonus + allGems;
+  const unlock = Achievements.unlock;
+  unlock("primeira_fuga");
+  if (!state.hurtThisLevel) unlock("intocavel");
+  if (allGems) unlock("colecionador");
+  if (state.dark) unlock("sem_medo");
+  if (state.N >= 21 && secs < 40) unlock("relampago");
   if (state.score > state.best) toast("🏆 Novo recorde!");
   saveProgress();
   hud();
@@ -563,7 +576,7 @@ function gameOver() {
 
 function newGame() {
   if (state.score > 0) saveProgress(); // recomeçar no meio não perde o recorde
-  Object.assign(state, { level: 1, lives: 3, score: 0, runStartBest: state.best, comboMax: 1 });
+  Object.assign(state, { level: 1, lives: 3, score: 0, runStartBest: state.best, comboMax: 1, smashes: 0 });
   startLevel();
 }
 
