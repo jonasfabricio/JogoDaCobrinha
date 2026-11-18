@@ -179,6 +179,8 @@ const mat = {
   gem: std(0x5eead4, 0x14b8a6, 1.4, { metalness: 0.6, roughness: 0.15 }),
   power: std(0xffffff, 0xbfdbfe, 1.6),
   exit: std(0xfde68a, 0xf59e0b, 2.2),
+  exitLocked: std(0x64748b, 0xdc2626, 0.9, { roughness: 0.6 }), // portal trancado: apagado, borda vermelha
+  key: std(0xfde68a, 0xf59e0b, 1.8, { metalness: 0.8, roughness: 0.2 }),
   beam: new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide }),
 };
 
@@ -194,7 +196,25 @@ const geo = {
   power: new THREE.IcosahedronGeometry(0.2),
   ring: new THREE.TorusGeometry(0.34, 0.05, 12, 48),
   beam: new THREE.CylinderGeometry(0.3, 0.3, 6, 24, 1, true),
+  keyBow: new THREE.TorusGeometry(0.1, 0.035, 10, 24),
+  keyShaft: new THREE.BoxGeometry(0.05, 0.26, 0.05),
+  keyTooth: new THREE.BoxGeometry(0.08, 0.05, 0.05),
 };
+
+// Chave: argola + haste + dente, deitada levemente para dar para ver de cima.
+function makeKey() {
+  const g = new THREE.Group();
+  const bow = new THREE.Mesh(geo.keyBow, mat.key);
+  bow.position.y = 0.15;
+  const shaft = new THREE.Mesh(geo.keyShaft, mat.key);
+  shaft.position.y = -0.04;
+  const tooth = new THREE.Mesh(geo.keyTooth, mat.key);
+  tooth.position.set(0.05, -0.13, 0);
+  g.add(bow, shaft, tooth);
+  g.rotation.x = -0.5;
+  g.scale.setScalar(1.7); // grande o bastante para achar de longe
+  return g;
+}
 
 let world = new THREE.Group();
 scene.add(world);
@@ -308,7 +328,7 @@ function startLevel() {
   const exitLight = new THREE.PointLight(0xfbbf24, 5, 5, 1.6);
   exitLight.position.y = 0.8;
   exit.add(ring, beam, exitLight);
-  exit.userData.ring = ring;
+  Object.assign(exit.userData, { ring, beam, light: exitLight });
   place(exit, N - 2, N - 2);
   world.add(body, cap, floor, grid, exit);
   world.userData.exit = exit;
@@ -332,6 +352,19 @@ function startLevel() {
   state.gemsTotal = nGems;
   state.gemsGot = 0;
 
+  // chave: a partir do nível 2 o portal começa trancado e é preciso achá-la
+  state.keyNeeded = level >= 2;
+  state.hasKey = !state.keyNeeded;
+  state.key = null;
+  if (state.keyNeeded) {
+    const spot = pickKeySpot();
+    const mesh = makeKey();
+    place(mesh, spot.r, spot.c, 0.45);
+    world.add(mesh);
+    state.key = { ...spot, mesh };
+  }
+  setExitLocked(!state.hasKey);
+
   place(playerMesh, 1, 1, 0.32);
   camTarget.set(1, 0.32, 1);
   queued = null;
@@ -347,6 +380,29 @@ function startLevel() {
   hud();
 }
 
+// Casa da chave: longe do início (≥ 50% da maior distância) e não colada na saída (≥ N/3),
+// sem cair em cima de cristal/floco. Se o labirinto não tiver uma casa assim, relaxa as regras.
+function pickKeySpot() {
+  const { N, maze } = state;
+  const start = { r: 1, c: 1 };
+  const fromStart = distances(1, 1), fromExit = distances(N - 2, N - 2);
+  let far = 0;
+  maze.forEach((row, r) => row.forEach((t, c) => { if (t === FLOOR) far = Math.max(far, fromStart[r][c]); }));
+  const taken = new Set([...state.gems, ...state.powers].map((it) => it.r * N + it.c));
+  const free = (p) => !taken.has(p.r * N + p.c);
+  const candidates = freeCells(far * 0.5, start);
+  return candidates.find((p) => free(p) && fromExit[p.r][p.c] >= N / 3) ?? candidates.find(free) ?? freeCells(1, start)[0];
+}
+
+// Portal trancado: anel apagado com borda vermelha, sem feixe nem luz.
+// (A luz só tem a intensidade zerada: ligar/desligar luzes obrigaria o Three.js a recompilar os shaders.)
+function setExitLocked(locked) {
+  const { ring, beam, light } = world.userData.exit.userData;
+  ring.material = locked ? mat.exitLocked : mat.exit;
+  beam.visible = !locked;
+  light.intensity = locked ? 0 : 5;
+}
+
 function addItem(p, g, m) {
   const mesh = new THREE.Mesh(g, m); // itens pequenos não projetam sombra (economia)
   place(mesh, p.r, p.c, 0.4);
@@ -357,6 +413,8 @@ function addItem(p, g, m) {
 /* ---------- Regras ---------- */
 const tickMs = () => Math.max(160, 380 - state.level * 18);
 const frozen = (now) => now < state.frozenUntil;
+
+let lockedToastUntil = 0;
 
 function move(i, now = performance.now()) {
   const p = state.player;
@@ -377,7 +435,20 @@ function move(i, now = performance.now()) {
 
   const mon = state.monsters.find((m) => m.r === r && m.c === c);
   if (mon) collide(mon, now);
-  if (state.running && state.maze[r][c] === EXIT) win(now);
+  if (state.key && state.key.r === r && state.key.c === c) {
+    world.remove(state.key.mesh);
+    state.key = null;
+    state.hasKey = true;
+    setExitLocked(false);
+    toast("🔑 Chave encontrada! O portal abriu");
+  }
+  if (state.running && state.maze[r][c] === EXIT) {
+    if (state.hasKey) win(now);
+    else if (now > lockedToastUntil) {
+      lockedToastUntil = now + 1000; // não repete o aviso a cada passo
+      toast("🔒 Portal trancado: encontre a chave!");
+    }
+  }
   hud();
   return true;
 }
@@ -496,6 +567,9 @@ const row = (k, v) => `<div class="row"><span>${k}</span><b>${v}</b></div>`;
 function hud() {
   $("#level").textContent = state.level;
   $("#gems").textContent = `${state.gemsGot}/${state.gemsTotal}`;
+  const keyIcon = $("#key-icon");
+  keyIcon.classList.toggle("need", !!state.keyNeeded);
+  keyIcon.classList.toggle("got", !!state.hasKey);
   $("#score").textContent = state.score;
   $("#lives").textContent = "♥".repeat(Math.max(0, state.lives)) + "♡".repeat(3 - Math.max(0, state.lives));
 }
@@ -675,7 +749,16 @@ renderer.setAnimationLoop(() => {
     }
   }
   const exit = world.userData.exit;
-  if (exit) { exit.userData.ring.rotation.y = t * 1.5; exit.userData.ring.rotation.x = Math.sin(t) * 0.3; }
+  if (exit) {
+    // trancado gira devagar; aberto gira rápido e balança
+    const spin = state.hasKey ? 1.5 : 0.4;
+    exit.userData.ring.rotation.y = t * spin;
+    exit.userData.ring.rotation.x = state.hasKey ? Math.sin(t) * 0.3 : 0;
+  }
+  if (state.key) {
+    state.key.mesh.rotation.y = t * 2.5;
+    state.key.mesh.position.y = 0.45 + Math.sin(t * 3) * 0.07;
+  }
 
   // câmera segue o jogador, com mergulho inicial e tremor ao levar dano
   camH += (9 - camH) * k(1.6);
@@ -711,6 +794,7 @@ Account.ready.then((user) => (state.best = user.best)).then(() => overlay(
   "Labirinto 3D",
   "Escape do labirinto",
   `Use <b>setas</b> / <b>WASD</b> (ou deslize no celular) para chegar ao <b>portal dourado</b>.<br>
+   A partir do nível 2 o portal começa <b>trancado</b>: ache a <b>chave</b> 🔑 escondida no labirinto.<br>
    Colete <b>cristais</b> 💎, pegue o <b>floco</b> ❄ para congelar e esmagar os monstros.<br>
    <span style="color:#a78bfa">Roxos</span> vagam · <span style="color:#ff4d7d">Vermelhos</span> caçam você.<br>
    Recorde: <b>${state.best}</b>`,
