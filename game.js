@@ -454,6 +454,7 @@ function press(i) {
 const release = (i) => { if (held === i) held = null; };
 
 addEventListener("keydown", (e) => {
+  if (e.target instanceof HTMLInputElement) return; // não roubar teclas enquanto digita email/senha
   const i = KEYS[e.key.toLowerCase()];
   if (i === undefined) return;
   e.preventDefault();
@@ -544,7 +545,7 @@ renderer.setAnimationLoop(() => {
 /* ---------- Início ---------- */
 startLevel(); // labirinto de fundo atrás do menu
 state.running = false;
-overlay(
+Account.ready.then(() => overlay(
   "Labirinto 3D",
   "Escape do labirinto",
   `Use <b>setas</b> / <b>WASD</b> (ou deslize no celular) para chegar ao <b>portal dourado</b>.<br>
@@ -553,7 +554,7 @@ overlay(
    Recorde: <b>${state.best}</b>`,
   "Jogar",
   newGame,
-);
+));
 }).catch((err) => {
   document.body.insertAdjacentHTML("beforeend",
     `<p style="position:fixed;inset:auto 16px 16px;padding:12px;border-radius:12px;background:#7f1d1d;color:#fff">
