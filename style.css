@@ -381,3 +381,24 @@ button.link:hover { text-decoration: underline; transform: none; box-shadow: non
   .place { font-size: 12px; gap: 6px; padding: 4px 6px; grid-template-columns: 22px 1fr auto; }
   .medal { width: 22px; height: 22px; font-size: 11px; }
 }
+
+/* ---------- Combo ---------- */
+.stat.combo { position: relative; min-width: 58px; }
+.stat.combo strong { display: inline-block; color: var(--muted); transition: color 0.2s ease, text-shadow 0.2s ease; }
+.stat.combo.active strong { color: #fbbf24; text-shadow: 0 0 12px rgba(251, 191, 36, 0.7); }
+.combo-bar {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #f59e0b, #fde68a);
+  transform-origin: left;
+  transform: scaleX(0);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.stat.combo.active .combo-bar { opacity: 1; }
+.stat.combo.bump strong { animation: combo-bump 0.35s cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes combo-bump { 40% { transform: scale(1.45); } }
