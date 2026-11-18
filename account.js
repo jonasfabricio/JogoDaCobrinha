@@ -37,8 +37,29 @@ window.Account = (() => {
   function showLoggedIn() {
     $("#auth").hidden = true;
     $("#me-email").textContent = user.email;
+    $("#me-email").title = user.email;
+    renderBest();
     $("#me-panel").hidden = false;
     resolveLogin?.(user);
+  }
+
+  function renderBest() {
+    $("#me-best").textContent = user.best.toLocaleString("pt-BR");
+    $("#me-level").textContent = user.level ? `nível ${user.level}` : "nível —";
+  }
+
+  // Envia a pontuação; o servidor só grava se for maior que o recorde salvo.
+  async function saveScore(score, level) {
+    if (!user || score <= user.best) return;
+    const data = await api("/api/score", { score, level }).catch(() => null);
+    if (!data) return;
+    user = data;
+    renderBest();
+    const panel = $("#me-panel");
+    panel.classList.remove("pulse");
+    void panel.offsetWidth; // reinicia a animação
+    panel.classList.add("pulse");
+    dispatchEvent(new Event("score:saved"));
   }
 
   $("#auth-switch").addEventListener("click", () => setMode(mode === "register" ? "login" : "register"));
@@ -101,5 +122,5 @@ window.Account = (() => {
   // Começa já, sem esperar o Three.js carregar da CDN.
   const ready = requireLogin();
 
-  return { ready, get user() { return user; }, api };
+  return { ready, saveScore, get user() { return user; }, api };
 })();

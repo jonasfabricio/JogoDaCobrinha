@@ -32,6 +32,12 @@ db.exec(`
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS records (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    best       INTEGER NOT NULL,
+    level      INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `);
 db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(Date.now());
 
@@ -133,14 +139,34 @@ const routes = {
     return { ok: true };
   },
 
-  "GET /api/me": (req) => {
-    const user = currentUser(req);
-    if (!user) throw new HttpError(401, "Não autenticado.");
+  "GET /api/me": (req) => profile(requireUser(req)),
+
+  // Guarda a pontuação só se for maior que o recorde atual do jogador.
+  "POST /api/score": (req, res, body) => {
+    const user = requireUser(req);
+    const score = Number(body?.score);
+    const level = Number(body?.level);
+    const valid = Number.isSafeInteger(score) && Number.isSafeInteger(level) &&
+      level >= 1 && level <= 1000 && score >= 0 && score <= level * 5000; // teto plausível por nível
+    if (!valid) throw new HttpError(400, "Pontuação inválida.");
+    db.prepare(`
+      INSERT INTO records (user_id, best, level, updated_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET best = excluded.best, level = excluded.level, updated_at = excluded.updated_at
+      WHERE excluded.best > records.best`).run(user.id, score, level, Date.now());
     return profile(user);
   },
 };
 
-const profile = (user) => ({ email: user.email });
+function requireUser(req) {
+  const user = currentUser(req);
+  if (!user) throw new HttpError(401, "Não autenticado.");
+  return user;
+}
+
+function profile(user) {
+  const record = db.prepare("SELECT best, level FROM records WHERE user_id = ?").get(user.id);
+  return { email: user.email, best: record?.best ?? 0, level: record?.level ?? 0 };
+}
 
 /* ---------- Arquivos do jogo (lista fechada: nunca serve o banco nem o código do servidor) ---------- */
 const STATIC = { "/": "index.html", "/index.html": "index.html", "/style.css": "style.css", "/game.js": "game.js", "/account.js": "account.js" };
