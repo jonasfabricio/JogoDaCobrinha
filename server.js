@@ -147,7 +147,7 @@ const routes = {
     const score = Number(body?.score);
     const level = Number(body?.level);
     const valid = Number.isSafeInteger(score) && Number.isSafeInteger(level) &&
-      level >= 1 && level <= 1000 && score >= 0 && score <= level * 5000; // teto plausível por nível
+      level >= 1 && level <= 1000 && score >= 0 && score <= level * 12000; // teto plausível por nível (com combo)
     if (!valid) throw new HttpError(400, "Pontuação inválida.");
     db.prepare(`
       INSERT INTO records (user_id, best, level, updated_at) VALUES (?, ?, ?, ?)

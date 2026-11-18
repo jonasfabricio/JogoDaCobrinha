@@ -61,7 +61,10 @@ const state = {
   player: { r: 1, c: 1 },
   monsters: [], gems: [], powers: [], gemsTotal: 0, gemsGot: 0,
   frozenUntil: 0, invulnUntil: 0, startTime: 0,
+  combo: 1, comboUntil: 0, comboMax: 1,
 };
+// Combo: coletas seguidas (no máximo COMBO_MS entre uma e outra) multiplicam os pontos, até ×COMBO_MAX.
+const COMBO_MS = 3000, COMBO_MAX = 5;
 let queued = null, queuedAt = 0, tickAcc = 0, camH = 30, shake = 0;
 const STEP_MS = 130;  // tempo para atravessar uma casa (um pouco mais lento = mais fácil acertar as curvas)
 const QUEUE_MS = 300; // por quanto tempo uma tecla apertada "antes da curva" continua valendo
@@ -312,6 +315,7 @@ function startLevel() {
   keysDown.length = 0;
   camH = N * 1.4; // câmera começa no alto e mergulha
   state.frozenUntil = state.invulnUntil = 0;
+  resetCombo();
   state.startTime = performance.now();
   tickAcc = 0;
   state.running = true;
@@ -345,7 +349,7 @@ function move(i, now = performance.now()) {
     list.splice(k, 1);
     return true;
   };
-  if (take(state.gems)) { state.gemsGot++; state.score += 50; }
+  if (take(state.gems)) { state.gemsGot++; addCombo(now, 50, "💎"); }
   if (take(state.powers)) { state.frozenUntil = now + 5000; toast("❄ Monstros congelados! Esmague-os!"); }
 
   const mon = state.monsters.find((m) => m.r === r && m.c === c);
@@ -383,8 +387,7 @@ function tickMonsters(now) {
 
 function collide(mon, now) {
   if (frozen(now)) {
-    state.score += 200;
-    toast("💥 +200");
+    addCombo(now, 200, "💥");
     const spot = freeCells(Math.max(8, state.N * 0.5))[0];
     if (spot) { Object.assign(mon, spot); place(mon.group, spot.r, spot.c, 3); }
     return;
@@ -393,6 +396,7 @@ function collide(mon, now) {
 
   state.lives--;
   shake = 0.6;
+  resetCombo(); // levar dano quebra o combo
   const flash = $("#flash");
   flash.classList.add("on");
   requestAnimationFrame(() => requestAnimationFrame(() => flash.classList.remove("on")));
@@ -401,6 +405,22 @@ function collide(mon, now) {
   state.player = { r: 1, c: 1 };
   state.invulnUntil = now + 2000;
   toast("Ai! −1 vida");
+}
+
+function addCombo(now, base, icon) {
+  state.combo = now < state.comboUntil ? Math.min(COMBO_MAX, state.combo + 1) : 1;
+  state.comboUntil = now + COMBO_MS;
+  state.comboMax = Math.max(state.comboMax, state.combo);
+  const points = base * state.combo;
+  state.score += points;
+  toast(state.combo > 1 ? `${icon} +${points}  ×${state.combo}` : `${icon} +${points}`);
+  renderCombo(true);
+}
+
+function resetCombo() {
+  state.combo = 1;
+  state.comboUntil = 0;
+  renderCombo(false);
 }
 
 function win(now) {
@@ -418,7 +438,8 @@ function win(now) {
     `Nível ${state.level} concluído`,
     "Saída encontrada!",
     row("Tempo", fmt(secs)) + row("Bônus de nível", `+${levelBonus}`) + row("Bônus de tempo", `+${timeBonus}`) +
-      row(`Cristais ${state.gemsGot}/${state.gemsTotal}`, allGems ? "+500 coleção completa!" : "—") + row("Pontos", state.score),
+      row(`Cristais ${state.gemsGot}/${state.gemsTotal}`, allGems ? "+500 coleção completa!" : "—") +
+      row("Maior combo", `×${state.comboMax}`) + row("Pontos", state.score),
     "Próximo nível →",
     () => { state.level++; startLevel(); },
   ), 450);
@@ -441,7 +462,7 @@ function gameOver() {
 
 function newGame() {
   if (state.score > 0) saveProgress(); // recomeçar no meio não perde o recorde
-  Object.assign(state, { level: 1, lives: 3, score: 0, runStartBest: state.best });
+  Object.assign(state, { level: 1, lives: 3, score: 0, runStartBest: state.best, comboMax: 1 });
   startLevel();
 }
 
@@ -454,6 +475,17 @@ function hud() {
   $("#gems").textContent = `${state.gemsGot}/${state.gemsTotal}`;
   $("#score").textContent = state.score;
   $("#lives").textContent = "♥".repeat(Math.max(0, state.lives)) + "♡".repeat(3 - Math.max(0, state.lives));
+}
+
+// HUD do combo: texto só muda quando o valor muda; a barra de tempo é atualizada no loop.
+const comboEl = $("#combo"), comboStat = $("#combo-stat"), comboBar = $("#combo-bar");
+function renderCombo(bump) {
+  comboEl.textContent = `×${state.combo}`;
+  comboStat.classList.toggle("active", state.combo > 1);
+  if (!bump || state.combo < 2) return;
+  comboStat.classList.remove("bump");
+  void comboStat.offsetWidth; // reinicia a animação
+  comboStat.classList.add("bump");
 }
 
 let toastTimer = 0;
@@ -579,6 +611,11 @@ renderer.setAnimationLoop(() => {
     if (tickAcc >= tickMs()) { tickAcc = 0; tickMonsters(now); }
     const secs = Math.floor((now - state.startTime) / 1000);
     if (secs !== lastSecs) { lastSecs = secs; timeEl.textContent = fmt(secs); }
+    if (state.combo > 1) {
+      const left = state.comboUntil - now;
+      if (left <= 0) resetCombo();
+      else comboBar.style.transform = `scaleX(${left / COMBO_MS})`;
+    }
   }
 
   // jogador: desliza em velocidade constante e emenda o próximo passo sem parar
