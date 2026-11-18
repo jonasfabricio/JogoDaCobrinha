@@ -155,7 +155,21 @@ const routes = {
       WHERE excluded.best > records.best`).run(user.id, score, level, Date.now());
     return profile(user);
   },
+
+  // Pódio público: 3 melhores recordes. Empate: quem chegou primeiro fica na frente.
+  // O email não é exposto; só um apelido derivado dele (ex.: "mar•••").
+  "GET /api/podium": (req) => {
+    const me = currentUser(req);
+    return db.prepare(`
+      SELECT users.id, users.email, records.best, records.level FROM records
+      JOIN users ON users.id = records.user_id
+      WHERE records.best > 0
+      ORDER BY records.best DESC, records.updated_at ASC LIMIT 3`).all()
+      .map((row) => ({ name: nickname(row.email), best: row.best, level: row.level, you: row.id === me?.id }));
+  },
 };
+
+const nickname = (email) => email.split("@")[0].slice(0, 3) + "•••";
 
 function requireUser(req) {
   const user = currentUser(req);
@@ -169,7 +183,7 @@ function profile(user) {
 }
 
 /* ---------- Arquivos do jogo (lista fechada: nunca serve o banco nem o código do servidor) ---------- */
-const STATIC = { "/": "index.html", "/index.html": "index.html", "/style.css": "style.css", "/game.js": "game.js", "/account.js": "account.js" };
+const STATIC = { "/": "index.html", "/index.html": "index.html", "/style.css": "style.css", "/game.js": "game.js", "/account.js": "account.js", "/podium.js": "podium.js" };
 const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
 
 function sendJson(res, status, data) {
