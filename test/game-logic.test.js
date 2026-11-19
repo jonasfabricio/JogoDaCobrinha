@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import GameLogic from "../game-logic.cjs";
 
 const { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom, shouldGrantLife,
-  QUALITY, shouldDowngrade, shouldUpgrade } = GameLogic;
+  QUALITY, shouldDowngrade, shouldUpgrade,
+  stepToward, phantomStep, patrolLoop, monsterTypes } = GameLogic;
 const I = Infinity;
 
 const maze = [
@@ -136,4 +137,63 @@ test("histerese: quadros que contam para subir nunca disparam a descida", () => 
   for (let level = 0; level <= QUALITY.maxLevel; level++) {
     assert.equal(shouldDowngrade(level, QUALITY.upFrame), false);
   }
+});
+
+// 7×7 com um anel em volta de um bloco central de paredes.
+const ring = [
+  [1, 1, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 1],
+  [1, 0, 1, 1, 1, 0, 1],
+  [1, 0, 1, 1, 1, 0, 1],
+  [1, 0, 1, 1, 1, 0, 1],
+  [1, 0, 0, 0, 0, 0, 1],
+  [1, 1, 1, 1, 1, 1, 1],
+];
+const adjacent = (a, b) => Math.abs(a.r - b.r) + Math.abs(a.c - b.c) === 1;
+
+test("stepToward escolhe o vizinho de chão mais perto do alvo", () => {
+  const d = distancesFrom(maze, 3, 1);
+  assert.equal(stepToward(d, maze, 1, 1), 3); // do início, só dá para ir à direita
+  assert.equal(stepToward(d, maze, 3, 2), 2); // vai para a esquerda, em direção a (3,1)
+});
+
+test("stepToward devolve -1 sem vizinho de chão", () => {
+  const closed = [[1, 1, 1], [1, 0, 1], [1, 1, 1]];
+  assert.equal(stepToward(distancesFrom(closed, 1, 1), closed, 1, 1), -1);
+});
+
+test("phantomStep anda no eixo mais distante e para no alvo", () => {
+  assert.equal(phantomStep(5, 5, 1, 4), 0);
+  assert.equal(phantomStep(5, 5, 9, 6), 1);
+  assert.equal(phantomStep(5, 5, 6, 1), 2);
+  assert.equal(phantomStep(5, 5, 4, 9), 3);
+  assert.equal(phantomStep(5, 5, 5, 5), -1);
+});
+
+test("patrolLoop fecha um circuito de casas vizinhas passando pela origem", () => {
+  const loop = patrolLoop(ring, 1, 3);
+  assert.equal(loop.length, 16);
+  assert.deepEqual(loop[0], { r: 1, c: 3 });
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i], b = loop[(i + 1) % loop.length];
+    assert.ok(adjacent(a, b), `${JSON.stringify(a)} -> ${JSON.stringify(b)}`);
+    assert.equal(ring[a.r][a.c], 0);
+  }
+  assert.equal(new Set(loop.map((p) => p.r * 7 + p.c)).size, loop.length);
+});
+
+test("patrolLoop devolve null num corredor sem ciclo ou acima do tamanho máximo", () => {
+  assert.equal(patrolLoop(maze, 1, 2), null);
+  assert.equal(patrolLoop(ring, 1, 3, 10), null);
+});
+
+test("monsterTypes mantém o padrão antigo e adiciona Sentinela/Phantom por nível", () => {
+  assert.deepEqual(monsterTypes(1, 2), ["wanderer", "wanderer"]);
+  assert.deepEqual(monsterTypes(3, 4), ["wanderer", "hunter", "wanderer", "hunter"]);
+  assert.deepEqual(monsterTypes(4, 4), ["wanderer", "hunter", "wanderer", "sentinel"]);
+  assert.deepEqual(monsterTypes(6, 5), ["wanderer", "hunter", "wanderer", "sentinel", "phantom"]);
+  const t12 = monsterTypes(12, 10);
+  assert.equal(t12.filter((t) => t === "phantom").length, 2);
+  assert.equal(t12.filter((t) => t === "sentinel").length, 2);
+  assert.equal(monsterTypes(12, 2)[0], "wanderer");
 });

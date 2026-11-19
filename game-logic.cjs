@@ -55,9 +55,71 @@
   const shouldDowngrade = (level, avg, q = QUALITY) => level < q.maxLevel && avg > q.downAvg;
   const shouldUpgrade = (level, goodTime, q = QUALITY) => level > 0 && goodTime >= q.upWindow;
 
+  /* ---------- Monstros ---------- */
+
+  // Direção (0-3) para a casa de chão vizinha mais perto do alvo do mapa `dist`; -1 se não houver.
+  function stepToward(dist, maze, r, c) {
+    let best = Infinity, pick = -1;
+    for (let i = 0; i < 4; i++) {
+      const nr = r + DIRS[i][0], nc = c + DIRS[i][1];
+      if (maze[nr][nc] === FLOOR && dist[nr][nc] < best) { best = dist[nr][nc]; pick = i; }
+    }
+    return pick;
+  }
+
+  // Phantom atravessa paredes: anda no eixo em que está mais longe do alvo.
+  function phantomStep(r, c, tr, tc) {
+    const dr = tr - r, dc = tc - c;
+    if (!dr && !dc) return -1;
+    if (Math.abs(dr) >= Math.abs(dc)) return dr < 0 ? 0 : 1;
+    return dc < 0 ? 2 : 3;
+  }
+
+  // Circuito fechado de casas vizinhas passando por (r, c): o menor caminho entre dois vizinhos
+  // de (r, c) que não passa por ela. O labirinto é "braided", então quase toda casa está num ciclo.
+  function patrolLoop(maze, r, c, maxLen = 40) {
+    const N = maze.length;
+    const nbs = DIRS.map(([dr, dc]) => [r + dr, c + dc]).filter(([nr, nc]) => maze[nr][nc] === FLOOR);
+    let best = null;
+    for (let a = 0; a < nbs.length; a++) {
+      for (let b = a + 1; b < nbs.length; b++) {
+        const prev = Array.from({ length: N }, () => Array(N).fill(null));
+        const [sr, sc] = nbs[a], [er, ec] = nbs[b];
+        prev[r][c] = prev[sr][sc] = [-1, -1];
+        const q = [[sr, sc]];
+        for (let i = 0; i < q.length && !prev[er][ec]; i++) {
+          const [qr, qc] = q[i];
+          for (const [dr, dc] of DIRS) {
+            const nr = qr + dr, nc = qc + dc;
+            if (maze[nr][nc] === FLOOR && !prev[nr][nc]) { prev[nr][nc] = [qr, qc]; q.push([nr, nc]); }
+          }
+        }
+        if (!prev[er][ec]) continue;
+        const path = [];
+        for (let p = [er, ec]; p[0] !== -1; p = prev[p[0]][p[1]]) path.push({ r: p[0], c: p[1] });
+        const loop = [{ r, c }, ...path.reverse()];
+        if (loop.length <= maxLen && (!best || loop.length < best.length)) best = loop;
+      }
+    }
+    return best;
+  }
+
+  // Tipos dos monstros do nível. Mantém o padrão antigo (andarilho/caçador alternados) e troca os
+  // últimos por Phantoms (nível 6+, 2 no 12+) e Sentinelas (nível 4+, 2 no 9+); o primeiro é sempre andarilho.
+  function monsterTypes(level, count) {
+    const types = Array.from({ length: count }, (_, i) => (level >= 2 && i % 2 === 1 ? "hunter" : "wanderer"));
+    const phantoms = level >= 12 ? 2 : level >= 6 ? 1 : 0;
+    const sentinels = level >= 9 ? 2 : level >= 4 ? 1 : 0;
+    let k = count - 1;
+    for (let n = 0; n < phantoms && k > 0; n++) types[k--] = "phantom";
+    for (let n = 0; n < sentinels && k > 0; n++) types[k--] = "sentinel";
+    return types;
+  }
+
   const GameLogic = {
     distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom, shouldGrantLife,
     QUALITY, shouldDowngrade, shouldUpgrade,
+    stepToward, phantomStep, patrolLoop, monsterTypes,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = GameLogic;
   else root.GameLogic = GameLogic;

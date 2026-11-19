@@ -192,6 +192,8 @@ const mat = {
   halo: std(0x7dd3fc, 0x38bdf8, 2.2),
   wanderer: std(0xa78bfa, 0x6d28d9, 0.9),
   hunter: std(0xff4d7d, 0xe11d48, 1.2),
+  sentinel: std(0xfbbf24, 0xd97706, 1.1),
+  phantom: std(0xf8fafc, 0xc7d2fe, 1.2, { transparent: true, opacity: 0.45, depthWrite: false }),
   frozen: std(0xe0f2fe, 0x93c5fd, 0.8, { roughness: 0.1 }),
   eye: new THREE.MeshBasicMaterial({ color: 0xffffff }),
   pupil: new THREE.MeshBasicMaterial({ color: 0x0b1020 }),
@@ -249,10 +251,12 @@ scene.add(playerMesh);
 
 const place = (obj, r, c, y = 0) => obj.position.set(c, y, r);
 
-function makeMonster(hunter) {
+// Tipos: wanderer (roxo, vaga), hunter (vermelho com chifres, caça), sentinel (âmbar com crista,
+// patrulha um circuito) e phantom (fantasma translúcido que flutua por cima das paredes).
+function makeMonster(type) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(geo.blob, hunter ? mat.hunter : mat.wanderer);
-  body.castShadow = true;
+  const body = new THREE.Mesh(geo.blob, mat[type]);
+  body.castShadow = type !== "phantom";
   g.add(body);
   for (const x of [-0.12, 0.12]) {
     const eye = new THREE.Mesh(geo.eye, mat.eye);
@@ -261,15 +265,22 @@ function makeMonster(hunter) {
     pupil.position.z = 0.055;
     eye.add(pupil);
     g.add(eye);
-    if (hunter) {
+    if (type === "hunter") {
       const horn = new THREE.Mesh(geo.horn, mat.hunter);
       horn.position.set(x * 1.3, 0.33, 0);
       horn.rotation.z = -x * 3;
       g.add(horn);
     }
   }
+  if (type === "sentinel") {
+    const crest = new THREE.Mesh(geo.horn, mat.sentinel);
+    crest.position.y = 0.38;
+    crest.scale.set(1.4, 1.3, 1.4);
+    g.add(crest);
+  }
   return { group: g, body };
 }
+const monsterY = (type) => (type === "phantom" ? 0.95 : 0.36); // phantom flutua acima das paredes
 
 /* ---------- Construção do nível ---------- */
 const distCache = GameLogic.createDistCache();
@@ -336,10 +347,20 @@ function startLevel() {
   const fromStartD = distances(1, 1); // reusado por monstros, itens e chave
   const spots = freeCells(Math.max(8, N * 0.6), state.player, fromStartD);
   const count = Math.min(1 + Math.floor(level * 0.8) + Math.floor(N / 14), 10, spots.length);
+  const types = GameLogic.monsterTypes(level, count);
   state.monsters = spots.slice(0, count).map((p, i) => {
-    const hunter = level >= 2 && i % 2 === 1;
-    const mon = { ...p, dir: 1, hunter, ...makeMonster(hunter) };
-    place(mon.group, p.r, p.c, 0.36);
+    const type = types[i];
+    const mon = { ...p, dir: 1, type, ...makeMonster(type) };
+    if (type === "sentinel") {
+      // se a casa não tiver circuito curto, tenta outras casas livres; sem nenhuma, vira um andarilho âmbar
+      let patrol = GameLogic.patrolLoop(state.maze, p.r, p.c);
+      for (let j = count; !patrol && j < Math.min(spots.length, count + 30); j++) {
+        patrol = GameLogic.patrolLoop(state.maze, spots[j].r, spots[j].c);
+        if (patrol) Object.assign(mon, spots[j]);
+      }
+      Object.assign(mon, { patrol, idx: 0, home: GameLogic.createDistCache() });
+    }
+    place(mon.group, mon.r, mon.c, monsterY(type));
     world.add(mon.group);
     return mon;
   });
@@ -464,30 +485,60 @@ function move(i, now = performance.now()) {
 
 const opts = [], fwd = []; // reusados a cada tick para não alocar arrays por monstro
 
+const SENTINEL_RADIUS = 4; // casas (pelo caminho) a partir das quais o Sentinela larga a ronda e persegue
+
+// Caçador (perto do jogador) segue o caminho mais curto; andarilho segue em frente e só volta se não houver opção.
+function walkerPick(m, d) {
+  const { maze } = state;
+  opts.length = 0;
+  for (let i = 0; i < 4; i++) if (maze[m.r + DIRS[i][0]][m.c + DIRS[i][1]] === FLOOR) opts.push(i);
+  if (!opts.length) return -1;
+  if (m.type === "hunter" && d[m.r][m.c] <= 10 && Math.random() < 0.8) return GameLogic.stepToward(d, maze, m.r, m.c);
+  fwd.length = 0;
+  for (const i of opts) if (i !== (m.dir ^ 1)) fwd.push(i);
+  const pool = fwd.length ? fwd : opts;
+  return pool[rand(pool.length)];
+}
+
+// Sentinela: faz a ronda no circuito; se o jogador chega perto, persegue. Depois volta para a
+// casa do circuito de onde saiu (patrol[idx]) e continua a ronda.
+function sentinelPick(m, d) {
+  const { maze } = state;
+  if (d[m.r][m.c] <= SENTINEL_RADIUS) return GameLogic.stepToward(d, maze, m.r, m.c);
+  const here = m.patrol[m.idx];
+  if (m.r !== here.r || m.c !== here.c) {
+    return GameLogic.stepToward(GameLogic.cachedDistances(m.home, maze, here.r, here.c), maze, m.r, m.c);
+  }
+  m.idx = (m.idx + 1) % m.patrol.length;
+  const next = m.patrol[m.idx];
+  return DIRS.findIndex(([dr, dc]) => m.r + dr === next.r && m.c + dc === next.c);
+}
+
+// Phantom: vai direto até o jogador atravessando paredes, na metade da velocidade.
+function phantomPick(m) {
+  m.skip = !m.skip;
+  return m.skip ? -1 : GameLogic.phantomStep(m.r, m.c, state.player.r, state.player.c);
+}
+
+// Sentinela esmagado volta para a casa do próprio circuito mais longe do jogador e retoma a ronda dali.
+function patrolRespawn(mon) {
+  const d = distances(state.player.r, state.player.c);
+  mon.idx = mon.patrol.reduce((best, p, i) => (d[p.r][p.c] > d[mon.patrol[best].r][mon.patrol[best].c] ? i : best), 0);
+  const { r, c } = mon.patrol[mon.idx];
+  return { r, c };
+}
+
 function tickMonsters(now) {
   if (frozen(now)) return;
-  const { maze, player } = state;
-  const d = state.monsters.some((m) => m.hunter) ? distances(player.r, player.c) : null;
+  const { player } = state;
+  const needD = state.monsters.some((m) => m.type === "hunter" || m.type === "sentinel");
+  const d = needD ? distances(player.r, player.c) : null;
 
   for (const m of state.monsters) {
-    opts.length = 0;
-    for (let i = 0; i < 4; i++) if (maze[m.r + DIRS[i][0]][m.c + DIRS[i][1]] === FLOOR) opts.push(i);
-    if (!opts.length) continue;
-    let pick;
-    if (m.hunter && d[m.r][m.c] <= 10 && Math.random() < 0.8) {
-      // caçador: segue o caminho mais curto até o jogador
-      let best = Infinity;
-      for (const i of opts) {
-        const v = d[m.r + DIRS[i][0]][m.c + DIRS[i][1]];
-        if (v < best) { best = v; pick = i; }
-      }
-    } else {
-      // andarilho: segue em frente, só volta se não houver opção
-      fwd.length = 0;
-      for (const i of opts) if (i !== (m.dir ^ 1)) fwd.push(i);
-      const pool = fwd.length ? fwd : opts;
-      pick = pool[rand(pool.length)];
-    }
+    const pick = m.type === "phantom" ? phantomPick(m)
+      : m.type === "sentinel" && m.patrol ? sentinelPick(m, d)
+      : walkerPick(m, d);
+    if (pick < 0) continue;
     m.dir = pick;
     m.r += DIRS[pick][0];
     m.c += DIRS[pick][1];
@@ -501,7 +552,7 @@ function collide(mon, now) {
     addCombo(now, 200, "💥");
     Sfx.smash();
     if (++state.smashes >= 10) Achievements.unlock("esmagador");
-    const spot = freeCells(Math.max(8, state.N * 0.5))[0];
+    const spot = mon.patrol ? patrolRespawn(mon) : freeCells(Math.max(8, state.N * 0.5))[0];
     if (spot) { Object.assign(mon, spot); place(mon.group, spot.r, spot.c, 3); }
     return;
   }
@@ -771,13 +822,16 @@ renderer.setAnimationLoop(() => {
   const isFrozen = frozen(now);
   const blink = isFrozen && state.frozenUntil - now < 1200 && Math.floor(now / 120) % 2;
   const monsterStep = (dt * 1000) / tickMs();
+  mat.phantom.opacity = 0.4 + Math.sin(t * 3) * 0.15; // phantom "respira" (some e reaparece de leve)
   state.monsters.forEach((m, i) => {
     const g = m.group;
-    approach(g.position, m.c, m.r, monsterStep);
-    g.position.y += (0.36 + (isFrozen ? 0 : Math.abs(Math.sin(t * 8 + i)) * 0.12) - g.position.y) * k(12);
+    const ghost = m.type === "phantom";
+    approach(g.position, m.c, m.r, ghost ? monsterStep / 2 : monsterStep); // anda a cada 2 ticks
+    const bob = isFrozen ? 0 : ghost ? Math.sin(t * 2 + i) * 0.08 : Math.abs(Math.sin(t * 8 + i)) * 0.12;
+    g.position.y += (monsterY(m.type) + bob - g.position.y) * k(12);
     const turn = Math.atan2(DIRS[m.dir][1], DIRS[m.dir][0]) - g.rotation.y;
     g.rotation.y += Math.atan2(Math.sin(turn), Math.cos(turn)) * k(12);
-    const look = isFrozen && !blink ? mat.frozen : m.hunter ? mat.hunter : mat.wanderer;
+    const look = isFrozen && !blink ? mat.frozen : mat[m.type];
     if (m.body.material !== look) m.body.material = look;
   });
 
@@ -836,7 +890,8 @@ Account.ready.then((user) => (state.best = user.best)).then(() => overlay(
   `Use <b>setas</b> / <b>WASD</b> (ou deslize no celular) para chegar ao <b>portal dourado</b>.<br>
    A partir do nível 2 o portal começa <b>trancado</b>: ache a <b>chave</b> 🔑 escondida no labirinto.<br>
    Colete <b>cristais</b> 💎, pegue o <b>floco</b> ❄ para congelar e esmagar os monstros.<br>
-   <span style="color:#a78bfa">Roxos</span> vagam · <span style="color:#ff4d7d">Vermelhos</span> caçam você.<br>
+   <span style="color:#a78bfa">Roxos</span> vagam · <span style="color:#ff4d7d">Vermelhos</span> caçam você ·
+   <span style="color:#fbbf24">Âmbar</span> fazem ronda · <span style="color:#e2e8f0">Fantasmas</span> atravessam paredes.<br>
    Recorde: <b>${state.best}</b>`,
   "Jogar",
   newGame,
