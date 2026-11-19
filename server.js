@@ -235,8 +235,8 @@ async function profile(user) {
 }
 
 /* ---------- Arquivos do jogo (lista fechada: nunca serve o banco nem o código do servidor) ---------- */
-const STATIC = { "/": "index.html", "/index.html": "index.html", "/style.css": "style.css", "/game.js": "game.js", "/account.js": "account.js", "/audio.js": "audio.js", "/achievements.js": "achievements.js", "/podium.js": "podium.js" };
-const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
+const STATIC = { "/": "index.html", "/index.html": "index.html", "/style.css": "style.css", "/game.js": "game.js", "/account.js": "account.js", "/audio.js": "audio.js", "/achievements.js": "achievements.js", "/podium.js": "podium.js", "/game-logic.cjs": "game-logic.cjs" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".cjs": "text/javascript; charset=utf-8" };
 
 function sendJson(res, status, data) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }).end(JSON.stringify(data));

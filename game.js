@@ -254,23 +254,7 @@ function makeMonster(hunter) {
 }
 
 /* ---------- Construção do nível ---------- */
-function distances(sr, sc) {
-  const { N, maze } = state;
-  const d = Array.from({ length: N }, () => Array(N).fill(Infinity));
-  d[sr][sc] = 0;
-  const q = [[sr, sc]];
-  for (let i = 0; i < q.length; i++) {
-    const [r, c] = q[i];
-    for (const [dr, dc] of DIRS) {
-      const nr = r + dr, nc = c + dc;
-      if (maze[nr][nc] !== WALL && d[nr][nc] === Infinity) {
-        d[nr][nc] = d[r][c] + 1;
-        q.push([nr, nc]);
-      }
-    }
-  }
-  return d;
-}
+const distances = (r, c) => GameLogic.distancesFrom(state.maze, r, c);
 
 function freeCells(minDist = 0, from = state.player) {
   const d = distances(from.r, from.c);
