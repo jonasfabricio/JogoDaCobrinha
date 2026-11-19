@@ -6,7 +6,7 @@ const { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsF
   QUALITY, shouldDowngrade, shouldUpgrade,
   stepToward, phantomStep, patrolLoop, monsterTypes,
   isBossLevel, BOSS, bossNextPhase, dashDirection, levelBonus,
-  MODIFIERS, levelModifier } = GameLogic;
+  MODIFIERS, levelModifier, BLINK, blinkPath } = GameLogic;
 const I = Infinity;
 
 const maze = [
@@ -254,4 +254,33 @@ test("levelModifier nunca cai em nível escuro nem em nível-chefe e usa todos o
     assert.equal(isBossLevel(l), false, `nível ${l} é chefe`);
   }
   assert.deepEqual([...seen].sort(), [...MODIFIERS].sort());
+});
+
+// 7×7 com um corredor longo na linha 1 e parede na coluna 4 da linha 3.
+const lane = [
+  [1, 1, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 1],
+  [1, 0, 1, 1, 1, 0, 1],
+  [1, 0, 0, 0, 1, 0, 1],
+  [1, 0, 1, 1, 1, 0, 1],
+  [1, 0, 0, 0, 0, 2, 1],
+  [1, 1, 1, 1, 1, 1, 1],
+];
+
+test("blinkPath: corredor aberto devolve a casa atual + 3 casas", () => {
+  assert.deepEqual(blinkPath(lane, 1, 1, 3), [{ r: 1, c: 1 }, { r: 1, c: 2 }, { r: 1, c: 3 }, { r: 1, c: 4 }]);
+});
+
+test("blinkPath: para antes da parede no meio do caminho", () => {
+  assert.deepEqual(blinkPath(lane, 3, 1, 3), [{ r: 3, c: 1 }, { r: 3, c: 2 }, { r: 3, c: 3 }]);
+});
+
+test("blinkPath: parede imediata devolve só a casa atual", () => {
+  assert.deepEqual(blinkPath(lane, 1, 1, 0), [{ r: 1, c: 1 }]);
+});
+
+test("blinkPath: a saída conta como casa andável e o alcance padrão é BLINK.range", () => {
+  assert.equal(BLINK.range, 3);
+  assert.deepEqual(blinkPath(lane, 5, 3, 3), [{ r: 5, c: 3 }, { r: 5, c: 4 }, { r: 5, c: 5 }]);
+  assert.equal(blinkPath(lane, 1, 1, 3, 1).length, 2);
 });

@@ -60,7 +60,7 @@ const state = {
   N: 0, maze: null, running: false,
   player: { r: 1, c: 1 },
   monsters: [], gems: [], powers: [], gemsTotal: 0, gemsGot: 0,
-  frozenUntil: 0, invulnUntil: 0, startTime: 0,
+  frozenUntil: 0, invulnUntil: 0, startTime: 0, blinkReadyAt: 0,
   combo: 1, comboUntil: 0, comboMax: 1,
   hurtThisLevel: false, smashes: 0, // para as conquistas
 };
@@ -408,6 +408,8 @@ function startLevel() {
   keysDown.length = 0;
   camH = N * 1.4; // câmera começa no alto e mergulha
   state.frozenUntil = state.invulnUntil = 0;
+  state.blinkReadyAt = 0; // cada nível começa com o Blink pronto
+  renderBlink(0);
   resetCombo();
   state.hurtThisLevel = false;
   if (level >= 5) Achievements.unlock("explorador");
@@ -469,7 +471,12 @@ function move(i, now = performance.now()) {
   if (state.maze[r][c] === WALL) return false;
   p.r = r; p.c = c; p.dir = i;
   playerMesh.rotation.y = Math.atan2(DIRS[i][1], DIRS[i][0]);
+  enterCell(r, c, now);
+  return true;
+}
 
+// O que acontece ao chegar numa casa (andando ou pelo Blink): coletas, monstro, chave e portal.
+function enterCell(r, c, now) {
   const take = (list) => {
     const k = list.findIndex((it) => it.r === r && it.c === c);
     if (k < 0) return false;
@@ -499,7 +506,29 @@ function move(i, now = performance.now()) {
     }
   }
   hud();
-  return true;
+}
+
+// Blink: salta até BLINK.range casas na direção em que o jogador está virado, por cima de monstros,
+// e pousa na casa livre mais distante antes da parede. Custa o combo e recarrega em BLINK.cooldown.
+const blinkReady = (now) => now >= state.blinkReadyAt;
+function blink(now = performance.now()) {
+  const p = state.player;
+  if (!state.running || p.dir === undefined) return;
+  if (!blinkReady(now)) { toast(`💨 Blink recarregando… ${Math.ceil((state.blinkReadyAt - now) / 1000)} s`); return; }
+  const path = GameLogic.blinkPath(state.maze, p.r, p.c, p.dir);
+  const occupied = (cell) => state.monsters.some((m) => m.r === cell.r && m.c === cell.c);
+  const land = path.slice(1).reverse().find((cell) => !occupied(cell));
+  if (!land) return; // parede colada ou só monstros à frente: não gasta a recarga
+  p.r = land.r; p.c = land.c;
+  playerMesh.position.x = land.c; // teleporte: o mesh não desliza até lá
+  playerMesh.position.z = land.r;
+  queued = null;
+  state.invulnUntil = Math.max(state.invulnUntil, now + GameLogic.BLINK.invuln);
+  state.blinkReadyAt = now + GameLogic.BLINK.cooldown;
+  resetCombo();
+  Sfx.blink();
+  enterCell(land.r, land.c, now);
+  renderBlink(now);
 }
 
 const opts = [], fwd = []; // reusados a cada tick para não alocar arrays por monstro
@@ -745,6 +774,18 @@ function toast(text, ms = 1800) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), ms);
 }
+// Indicador do Blink (HUD + botão do celular): só mexe no DOM quando o estado muda.
+const blinkIcon = $("#blink-icon"), blinkBtn = $("#blink-btn");
+let blinkShown = null;
+function renderBlink(now) {
+  const ready = blinkReady(now);
+  if (ready === blinkShown) return;
+  blinkShown = ready;
+  blinkIcon.classList.toggle("ready", ready);
+  blinkIcon.title = ready ? "Blink pronto (Espaço)" : "Blink recarregando";
+  blinkBtn.classList.toggle("cooldown", !ready);
+}
+
 const MODIFIER_TEXT = {
   mirror: `🪞 Espelhado: controles invertidos por ${GameLogic.MIRROR_MS / 1000} s`,
   noFlake: "🚫 Sem floco ❄ neste nível",
@@ -807,6 +848,11 @@ addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return; // não roubar teclas enquanto digita email/senha
   const key = e.key.toLowerCase();
   if (key === "m" && !e.repeat) return Sfx.toggleMute();
+  if (key === " " && state.running) { // fora da partida o Espaço segue ativando o botão em foco (ex.: "Jogar")
+    e.preventDefault();
+    if (!e.repeat) blink();
+    return;
+  }
   const i = KEYS[key];
   if (i === undefined) return;
   e.preventDefault();
@@ -823,7 +869,8 @@ addEventListener("keyup", (e) => {
 });
 addEventListener("blur", () => { held.clear(); releaseAll(); });
 
-document.querySelectorAll(".pad button").forEach((b) => {
+$("#blink-btn").addEventListener("pointerdown", (e) => { e.preventDefault(); blink(); });
+document.querySelectorAll(".pad button[data-dir]").forEach((b) => {
   const i = Number(b.dataset.dir);
   let dir = i;
   b.addEventListener("pointerdown", (e) => { e.preventDefault(); dir = inputDir(i); press(dir); });
@@ -882,6 +929,7 @@ renderer.setAnimationLoop(() => {
     const tm = tickMs();
     if (tickAcc >= tm) { tickAcc = GameLogic.nextTickAcc(tickAcc, tm); tickMonsters(now); }
     if (state.mirrorUntil && now >= state.mirrorUntil) { state.mirrorUntil = 0; toast("🪞 Controles normais de novo"); }
+    renderBlink(now);
     const secs = Math.floor((now - state.startTime) / 1000);
     if (secs !== lastSecs) { lastSecs = secs; timeEl.textContent = fmt(secs); }
     if (state.combo > 1) {
@@ -983,6 +1031,7 @@ Account.ready.then((user) => (state.best = user.best)).then(() => overlay(
    Colete <b>cristais</b> 💎, pegue o <b>floco</b> ❄ para congelar e esmagar os monstros.<br>
    <span style="color:#a78bfa">Roxos</span> vagam · <span style="color:#ff4d7d">Vermelhos</span> caçam você ·
    <span style="color:#fbbf24">Âmbar</span> fazem ronda · <span style="color:#e2e8f0">Fantasmas</span> atravessam paredes.<br>
+   Encurralado? <b>Espaço</b> (ou 💨) dá um salto de 3 casas: custa o combo e recarrega em 12 s.<br>
    Recorde: <b>${state.best}</b>`,
   "Jogar",
   newGame,
