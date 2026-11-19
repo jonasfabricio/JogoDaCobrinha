@@ -84,6 +84,7 @@ window.Sfx = (() => {
     win: () => { arpeggio([72, 76, 79, 84, 88], 0.09, 0.3, "triangle", 0.3); tone(midi(96), 0.7, "sine", 0.22, 0.45); },
     gameOver: () => arpeggio([67, 63, 60, 55], 0.18, 0.45, "sawtooth", 0.16),
     achievement: () => arpeggio([79, 83, 86, 91], 0.08, 0.28, "sine", 0.3),
+    bossWarn: () => { for (let i = 0; i < 3; i++) tone(330, 0.2, "sawtooth", 0.2, i * 0.45, 660); }, // sirene: a investida vem aí
   };
 
   /* ---------- Música ambiente ----------

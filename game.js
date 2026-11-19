@@ -194,6 +194,8 @@ const mat = {
   hunter: std(0xff4d7d, 0xe11d48, 1.2),
   sentinel: std(0xfbbf24, 0xd97706, 1.1),
   phantom: std(0xf8fafc, 0xc7d2fe, 1.2, { transparent: true, opacity: 0.45, depthWrite: false }),
+  boss: std(0x7f1d1d, 0xb91c1c, 1.3, { roughness: 0.25, metalness: 0.3 }),
+  bossWarn: std(0xfef3c7, 0xfacc15, 2.6), // pisca nesta cor enquanto telegrafa a investida
   frozen: std(0xe0f2fe, 0x93c5fd, 0.8, { roughness: 0.1 }),
   eye: new THREE.MeshBasicMaterial({ color: 0xffffff }),
   pupil: new THREE.MeshBasicMaterial({ color: 0x0b1020 }),
@@ -265,8 +267,8 @@ function makeMonster(type) {
     pupil.position.z = 0.055;
     eye.add(pupil);
     g.add(eye);
-    if (type === "hunter") {
-      const horn = new THREE.Mesh(geo.horn, mat.hunter);
+    if (type === "hunter" || type === "boss") {
+      const horn = new THREE.Mesh(geo.horn, mat[type]);
       horn.position.set(x * 1.3, 0.33, 0);
       horn.rotation.z = -x * 3;
       g.add(horn);
@@ -278,9 +280,11 @@ function makeMonster(type) {
     crest.scale.set(1.4, 1.3, 1.4);
     g.add(crest);
   }
+  if (type === "boss") g.scale.setScalar(1.7);
   return { group: g, body };
 }
-const monsterY = (type) => (type === "phantom" ? 0.95 : 0.36); // phantom flutua acima das paredes
+const MONSTER_Y = { phantom: 0.95, boss: 0.58 }; // phantom flutua acima das paredes; o chefe é maior
+const monsterY = (type) => MONSTER_Y[type] ?? 0.36;
 
 /* ---------- Construção do nível ---------- */
 const distCache = GameLogic.createDistCache();
@@ -346,8 +350,11 @@ function startLevel() {
   // monstros: quantidade cresce com nível e tamanho; caçadores a partir do nível 2
   const fromStartD = distances(1, 1); // reusado por monstros, itens e chave
   const spots = freeCells(Math.max(8, N * 0.6), state.player, fromStartD);
-  const count = Math.min(1 + Math.floor(level * 0.8) + Math.floor(N / 14), 10, spots.length);
-  const types = GameLogic.monsterTypes(level, count);
+  // níveis 10, 20, 30…: um único chefe no lugar do grupo normal
+  state.bossLevel = GameLogic.isBossLevel(level);
+  const count = state.bossLevel ? Math.min(1, spots.length) : Math.min(1 + Math.floor(level * 0.8) + Math.floor(N / 14), 10, spots.length);
+  const types = state.bossLevel ? ["boss"] : GameLogic.monsterTypes(level, count);
+  state.boss = state.bossLevel ? { hp: GameLogic.BOSS.hp, phase: "chase", until: performance.now() + GameLogic.BOSS.chase, dashDir: 1 } : null;
   state.monsters = spots.slice(0, count).map((p, i) => {
     const type = types[i];
     const mon = { ...p, dir: 1, type, ...makeMonster(type) };
@@ -404,7 +411,9 @@ function startLevel() {
   Sfx.music(state.dark ? "dark" : "normal");
   const life = state.lifeGranted ? "❤ +1 vida · " : "";
   state.lifeGranted = false;
-  toast(life + (state.dark ? `🌑 Nível ${level} no escuro · só sua lanterna ilumina` : `Nível ${level} · ${N}×${N}`));
+  const intro = state.bossLevel ? `👑 Nível ${level}: CHEFE! Fuja pelo portal${state.dark ? " · no escuro" : ""}`
+    : state.dark ? `🌑 Nível ${level} no escuro · só sua lanterna ilumina` : `Nível ${level} · ${N}×${N}`;
+  toast(life + intro);
   hud();
 }
 
@@ -528,30 +537,72 @@ function patrolRespawn(mon) {
   return { r, c };
 }
 
+// Chefe: fases por tempo (GameLogic.BOSS). Ao começar a telegrafar, trava a direção da investida e toca a sirene.
+function bossPick(m, d, now) {
+  const b = state.boss, { maze, player } = state;
+  if (now >= b.until) {
+    Object.assign(b, GameLogic.bossNextPhase(b.phase, now));
+    if (b.phase === "telegraph") {
+      b.dashDir = GameLogic.dashDirection(maze, m.r, m.c, player.r, player.c, d);
+      Sfx.bossWarn();
+    }
+  }
+  if (b.phase === "chase") return GameLogic.stepToward(d, maze, m.r, m.c);
+  if (b.phase === "telegraph") {
+    if (b.dashDir >= 0) m.dir = b.dashDir; // fica parado, já virado para onde vai investir
+    return -1;
+  }
+  if (bossCanDash(m)) return b.dashDir;
+  Object.assign(b, GameLogic.bossNextPhase("dash", now)); // bateu na parede: volta a perseguir
+  return GameLogic.stepToward(d, maze, m.r, m.c);
+}
+const bossCanDash = (m) => {
+  const i = state.boss.dashDir;
+  return i >= 0 && state.maze[m.r + DIRS[i][0]][m.c + DIRS[i][1]] === FLOOR;
+};
+
 function tickMonsters(now) {
   if (frozen(now)) return;
   const { player } = state;
-  const needD = state.monsters.some((m) => m.type === "hunter" || m.type === "sentinel");
+  const needD = state.monsters.some((m) => m.type === "hunter" || m.type === "sentinel" || m.type === "boss");
   const d = needD ? distances(player.r, player.c) : null;
+  const step = (m, i) => {
+    m.dir = i;
+    m.r += DIRS[i][0];
+    m.c += DIRS[i][1];
+    if (m.r === player.r && m.c === player.c) collide(m, now);
+  };
 
   for (const m of state.monsters) {
-    const pick = m.type === "phantom" ? phantomPick(m)
+    const pick = m.type === "boss" ? bossPick(m, d, now)
+      : m.type === "phantom" ? phantomPick(m)
       : m.type === "sentinel" && m.patrol ? sentinelPick(m, d)
       : walkerPick(m, d);
     if (pick < 0) continue;
-    m.dir = pick;
-    m.r += DIRS[pick][0];
-    m.c += DIRS[pick][1];
-    if (m.r === player.r && m.c === player.c) collide(m, now);
+    step(m, pick);
     if (!state.running) return;
+    // investida: segunda casa no mesmo tick (o dobro da velocidade)
+    if (m.type === "boss" && state.boss.phase === "dash" && bossCanDash(m)) {
+      step(m, state.boss.dashDir);
+      if (!state.running) return;
+    }
   }
 }
 
 function collide(mon, now) {
   if (frozen(now)) {
-    addCombo(now, 200, "💥");
+    addCombo(now, mon.type === "boss" ? 400 : 200, "💥");
     Sfx.smash();
     if (++state.smashes >= 10) Achievements.unlock("esmagador");
+    if (mon.type === "boss" && --state.boss.hp <= 0) {
+      // 3 esmagadas derrotam o chefe: ele some de vez
+      state.monsters.splice(state.monsters.indexOf(mon), 1);
+      world.remove(mon.group);
+      state.boss.defeated = true;
+      toast("👑 Chefe derrotado! Agora é só achar a saída");
+      return;
+    }
+    if (mon.type === "boss") toast(`👑 Chefe atingido! Faltam ${state.boss.hp}`);
     const spot = mon.patrol ? patrolRespawn(mon) : freeCells(Math.max(8, state.N * 0.5))[0];
     if (spot) { Object.assign(mon, spot); place(mon.group, spot.r, spot.c, 3); }
     return;
@@ -596,9 +647,11 @@ function win(now) {
   keysDown.length = 0;
   const secs = Math.floor((now - state.startTime) / 1000);
   const timeBonus = Math.max(0, 300 - secs * 5);
-  const levelBonus = Math.round((300 + state.level * 100) * (state.dark ? 1.5 : 1)); // escuro vale ×1,5
+  const levelBonus = GameLogic.levelBonus(state.level, { dark: state.dark, boss: state.bossLevel });
+  const bossBonus = state.boss?.defeated ? GameLogic.BOSS_DEFEAT_BONUS : 0;
   const allGems = state.gemsGot === state.gemsTotal ? 500 : 0;
-  state.score += timeBonus + levelBonus + allGems;
+  state.score += timeBonus + levelBonus + allGems + bossBonus;
+  const mults = [state.bossLevel && "chefe ×2", state.dark && "escuro ×1,5"].filter(Boolean).join(", ");
   const unlock = Achievements.unlock;
   unlock("primeira_fuga");
   if (!state.hurtThisLevel) unlock("intocavel");
@@ -611,7 +664,8 @@ function win(now) {
   setTimeout(() => overlay(
     `Nível ${state.level} concluído`,
     "Saída encontrada!",
-    row("Tempo", fmt(secs)) + row(state.dark ? "Bônus de nível (escuro ×1,5)" : "Bônus de nível", `+${levelBonus}`) + row("Bônus de tempo", `+${timeBonus}`) +
+    row("Tempo", fmt(secs)) + row(mults ? `Bônus de nível (${mults})` : "Bônus de nível", `+${levelBonus}`) +
+      (bossBonus ? row("Chefe derrotado 👑", `+${bossBonus}`) : "") + row("Bônus de tempo", `+${timeBonus}`) +
       row(`Cristais ${state.gemsGot}/${state.gemsTotal}`, allGems ? "+500 coleção completa!" : "—") +
       row("Maior combo", `×${state.comboMax}`) +
       (GameLogic.shouldGrantLife(state.level, state.lives) ? row("Bônus a cada 5 níveis", "+1 vida ❤") : "") +
@@ -826,12 +880,18 @@ renderer.setAnimationLoop(() => {
   state.monsters.forEach((m, i) => {
     const g = m.group;
     const ghost = m.type === "phantom";
-    approach(g.position, m.c, m.r, ghost ? monsterStep / 2 : monsterStep); // anda a cada 2 ticks
+    const dashing = m.type === "boss" && state.boss.phase === "dash";
+    approach(g.position, m.c, m.r, ghost ? monsterStep / 2 : dashing ? monsterStep * 2 : monsterStep); // phantom anda a cada 2 ticks
     const bob = isFrozen ? 0 : ghost ? Math.sin(t * 2 + i) * 0.08 : Math.abs(Math.sin(t * 8 + i)) * 0.12;
     g.position.y += (monsterY(m.type) + bob - g.position.y) * k(12);
     const turn = Math.atan2(DIRS[m.dir][1], DIRS[m.dir][0]) - g.rotation.y;
     g.rotation.y += Math.atan2(Math.sin(turn), Math.cos(turn)) * k(12);
-    const look = isFrozen && !blink ? mat.frozen : mat[m.type];
+    let look = isFrozen && !blink ? mat.frozen : mat[m.type];
+    if (m.type === "boss" && !isFrozen && state.boss.phase === "telegraph") {
+      const warn = Math.floor(now / 110) % 2 === 0;
+      if (warn) look = mat.bossWarn;
+      g.scale.setScalar(1.7 + (warn ? 0.15 : 0)); // pulsa enquanto telegrafa
+    } else if (m.type === "boss") g.scale.setScalar(1.7);
     if (m.body.material !== look) m.body.material = look;
   });
 
