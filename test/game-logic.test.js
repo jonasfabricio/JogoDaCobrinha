@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import GameLogic from "../game-logic.cjs";
 
-const { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom, shouldGrantLife } = GameLogic;
+const { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom, shouldGrantLife,
+  QUALITY, shouldDowngrade, shouldUpgrade } = GameLogic;
 const I = Infinity;
 
 const maze = [
@@ -113,4 +114,26 @@ test("shouldGrantLife dá vida a cada 5 níveis, respeitando o teto de 3", () =>
 test("shouldGrantLife aceita intervalo e teto personalizados", () => {
   assert.equal(shouldGrantLife(3, 4, { every: 3, max: 5 }), true);
   assert.equal(shouldGrantLife(5, 4, { every: 3, max: 5 }), false);
+});
+
+test("shouldDowngrade desce com média lenta e para no degrau 3", () => {
+  assert.equal(shouldDowngrade(0, 0.025), true);
+  assert.equal(shouldDowngrade(2, 0.03), true);
+  assert.equal(shouldDowngrade(3, 0.05), false);
+  assert.equal(shouldDowngrade(0, 0.016), false);
+});
+
+test("shouldUpgrade sobe só após a janela inteira de quadros bons e nunca abaixo de 0", () => {
+  assert.equal(shouldUpgrade(1, 6), true);
+  assert.equal(shouldUpgrade(3, 7.5), true);
+  assert.equal(shouldUpgrade(1, 5.9), false);
+  assert.equal(shouldUpgrade(0, 100), false);
+});
+
+test("histerese: quadros que contam para subir nunca disparam a descida", () => {
+  assert.ok(QUALITY.upFrame < QUALITY.downAvg);
+  assert.ok(QUALITY.upWindow > QUALITY.downWindow);
+  for (let level = 0; level <= QUALITY.maxLevel; level++) {
+    assert.equal(shouldDowngrade(level, QUALITY.upFrame), false);
+  }
 });
