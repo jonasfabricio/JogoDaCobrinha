@@ -362,7 +362,9 @@ function startLevel() {
   state.running = true;
   $("#overlay").hidden = true;
   Sfx.music(state.dark ? "dark" : "normal");
-  toast(state.dark ? `🌑 Nível ${level} no escuro · só sua lanterna ilumina` : `Nível ${level} · ${N}×${N}`);
+  const life = state.lifeGranted ? "❤ +1 vida · " : "";
+  state.lifeGranted = false;
+  toast(life + (state.dark ? `🌑 Nível ${level} no escuro · só sua lanterna ilumina` : `Nível ${level} · ${N}×${N}`));
   hud();
 }
 
@@ -541,9 +543,16 @@ function win(now) {
     "Saída encontrada!",
     row("Tempo", fmt(secs)) + row(state.dark ? "Bônus de nível (escuro ×1,5)" : "Bônus de nível", `+${levelBonus}`) + row("Bônus de tempo", `+${timeBonus}`) +
       row(`Cristais ${state.gemsGot}/${state.gemsTotal}`, allGems ? "+500 coleção completa!" : "—") +
-      row("Maior combo", `×${state.comboMax}`) + row("Pontos", state.score),
+      row("Maior combo", `×${state.comboMax}`) +
+      (GameLogic.shouldGrantLife(state.level, state.lives) ? row("Bônus a cada 5 níveis", "+1 vida ❤") : "") +
+      row("Pontos", state.score),
     "Próximo nível →",
-    () => { state.level++; startLevel(); },
+    () => {
+      const completed = state.level;
+      state.level++;
+      if (GameLogic.shouldGrantLife(completed, state.lives)) { state.lives++; state.lifeGranted = true; }
+      startLevel();
+    },
   ), 450);
 }
 

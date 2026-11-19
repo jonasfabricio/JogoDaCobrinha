@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import GameLogic from "../game-logic.cjs";
 
-const { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom } = GameLogic;
+const { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom, shouldGrantLife } = GameLogic;
 const I = Infinity;
 
 const maze = [
@@ -100,4 +100,17 @@ test("freeCellsFrom com distGrid pré-computado == computado internamente", () =
 test("freeCellsFrom respeita a distância mínima e ignora início, paredes e saída", () => {
   const cells = freeCellsFrom(maze, 3, { r: 1, c: 1 });
   assert.deepEqual(cells, [{ r: 2, c: 3 }, { r: 3, c: 1 }, { r: 3, c: 2 }]);
+});
+
+test("shouldGrantLife dá vida a cada 5 níveis, respeitando o teto de 3", () => {
+  assert.equal(shouldGrantLife(5, 2), true);
+  assert.equal(shouldGrantLife(5, 3), false);
+  assert.equal(shouldGrantLife(4, 1), false);
+  assert.equal(shouldGrantLife(10, 1), true);
+  assert.equal(shouldGrantLife(15, 3), false);
+});
+
+test("shouldGrantLife aceita intervalo e teto personalizados", () => {
+  assert.equal(shouldGrantLife(3, 4, { every: 3, max: 5 }), true);
+  assert.equal(shouldGrantLife(5, 4, { every: 3, max: 5 }), false);
 });

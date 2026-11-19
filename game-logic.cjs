@@ -46,7 +46,10 @@
     return out;
   }
 
-  const GameLogic = { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom };
+  const shouldGrantLife = (completedLevel, lives, { every = 5, max = 3 } = {}) =>
+    completedLevel > 0 && completedLevel % every === 0 && lives < max;
+
+  const GameLogic = { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom, shouldGrantLife };
   if (typeof module !== "undefined" && module.exports) module.exports = GameLogic;
   else root.GameLogic = GameLogic;
 })(globalThis);
