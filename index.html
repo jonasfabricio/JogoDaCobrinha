@@ -27,7 +27,7 @@
     <div class="stat"><span>Cristais</span><strong><span id="gems">0/0</span><i id="key-icon" class="key-icon" title="Chave do portal">🔑</i></strong></div>
     <div class="stat"><span>Pontos</span><strong id="score">0</strong></div>
     <div class="stat combo" id="combo-stat"><span>Combo</span><strong id="combo">×1</strong><i id="combo-bar" class="combo-bar"></i></div>
-    <div class="stat"><span>Vidas</span><strong id="lives" class="lives">♥♥♥</strong></div>
+    <div class="stat"><span>Vidas</span><strong><span id="lives" class="lives">♥♥♥</span><i id="blink-icon" class="blink-icon ready" title="Blink pronto (Espaço)">💨</i></strong></div>
     <button type="button" id="mute" class="icon ghost-icon" title="Desligar som (M)" aria-pressed="false">🔊</button>
     <button type="button" id="restart" class="icon" title="Recomeçar do nível 1">↻</button>
   </header>
@@ -40,6 +40,7 @@
     <button type="button" data-dir="2" class="left">◀</button>
     <button type="button" data-dir="1" class="down">▼</button>
     <button type="button" data-dir="3" class="right">▶</button>
+    <button type="button" id="blink-btn" class="blink-btn" title="Blink: salto de emergência">💨</button>
   </div>
 
   <section id="overlay" class="overlay" hidden>

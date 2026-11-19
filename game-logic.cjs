@@ -153,6 +153,23 @@
     return MODIFIERS[k % MODIFIERS.length];
   }
 
+  /* ---------- Blink (escape de emergência) ---------- */
+
+  // Alcance em casas, invulnerabilidade ao pousar e recarga (ms). Custa o combo.
+  const BLINK = { range: 3, invuln: 700, cooldown: 12000 };
+
+  // Casas andáveis (chão ou saída) na direção `dir`, começando pela atual e parando antes da parede.
+  function blinkPath(maze, r, c, dir, range = BLINK.range) {
+    const path = [{ r, c }];
+    const [dr, dc] = DIRS[dir];
+    for (let k = 1; k <= range; k++) {
+      const nr = r + dr * k, nc = c + dc * k;
+      if (maze[nr][nc] === WALL) break;
+      path.push({ r: nr, c: nc });
+    }
+    return path;
+  }
+
   // Bônus ao concluir o nível: escuro ×1,5 e chefe ×2 (acumulam; o nível 30 é os dois).
   const levelBonus = (level, { dark = false, boss = false } = {}) =>
     Math.round((300 + level * 100) * (dark ? 1.5 : 1) * (boss ? 2 : 1));
@@ -165,6 +182,7 @@
     stepToward, phantomStep, patrolLoop, monsterTypes,
     isBossLevel, BOSS, bossNextPhase, dashDirection,
     MODIFIERS, MIRROR_MS, levelModifier,
+    BLINK, blinkPath,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = GameLogic;
   else root.GameLogic = GameLogic;

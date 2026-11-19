@@ -56,7 +56,7 @@ html, body {
   text-transform: uppercase;
   color: var(--muted);
 }
-.stat strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.stat strong { font-size: 18px; font-variant-numeric: tabular-nums; white-space: nowrap; } /* ícones 🔑/💨 na mesma linha */
 .lives { color: var(--danger); letter-spacing: 2px; }
 
 button {
@@ -183,6 +183,8 @@ button.icon { width: 40px; height: 40px; font-size: 20px; padding: 0; }
 .pad .left { grid-column: 1; grid-row: 2; }
 .pad .down { grid-column: 2; grid-row: 2; }
 .pad .right { grid-column: 3; grid-row: 2; }
+.pad .blink-btn { grid-column: 3; grid-row: 1; transition: opacity 0.3s ease, filter 0.3s ease; }
+.pad .blink-btn.cooldown { opacity: 0.4; filter: grayscale(1); }
 
 @media (pointer: coarse) { .pad { display: grid; } }
 
@@ -416,6 +418,10 @@ button.link:hover { text-decoration: underline; transform: none; box-shadow: non
 @keyframes combo-bump { 40% { transform: scale(1.45); } }
 
 /* ---------- Chave ---------- */
+/* Blink no HUD: aceso = pronto, apagado = recarregando */
+.blink-icon { margin-left: 6px; font-style: normal; font-size: 14px; filter: grayscale(1); opacity: 0.3; transition: filter 0.3s ease, opacity 0.3s ease; }
+.blink-icon.ready { filter: none; opacity: 1; animation: key-got 0.6s cubic-bezier(0.2, 1.6, 0.4, 1); }
+
 .key-icon { display: none; margin-left: 6px; font-style: normal; font-size: 15px; filter: grayscale(1); opacity: 0.35; transition: filter 0.3s ease, opacity 0.3s ease; }
 .key-icon.need { display: inline-block; }
 .key-icon.got { filter: none; opacity: 1; animation: key-got 0.6s cubic-bezier(0.2, 1.6, 0.4, 1); }
