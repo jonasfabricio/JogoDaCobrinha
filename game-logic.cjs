@@ -116,10 +116,40 @@
     return types;
   }
 
+  /* ---------- Chefe (níveis 10, 20, 30…) ---------- */
+
+  const isBossLevel = (level) => level > 0 && level % 10 === 0;
+
+  // Ciclo de fases: perseguir rápido → telegrafar (parado, piscando) → investida em linha reta → …
+  const BOSS = { hp: 3, chase: 3000, telegraph: 1500, dash: 2500 };
+  const BOSS_NEXT = { chase: "telegraph", telegraph: "dash", dash: "chase" };
+  const bossNextPhase = (phase, now) => {
+    const next = BOSS_NEXT[phase];
+    return { phase: next, until: now + BOSS[next] };
+  };
+
+  // Direção da investida: se o jogador está na mesma linha/coluna e o primeiro passo é livre, vai reto
+  // nele; senão, pela direção do caminho mais curto.
+  function dashDirection(maze, r, c, pr, pc, dist) {
+    for (let i = 0; i < 4; i++) {
+      const [dr, dc] = DIRS[i];
+      const aligned = (dc === 0 && pc === c && Math.sign(pr - r) === dr) || (dr === 0 && pr === r && Math.sign(pc - c) === dc);
+      if (aligned && maze[r + dr][c + dc] === FLOOR) return i;
+    }
+    return stepToward(dist, maze, r, c);
+  }
+
+  // Bônus ao concluir o nível: escuro ×1,5 e chefe ×2 (acumulam; o nível 30 é os dois).
+  const levelBonus = (level, { dark = false, boss = false } = {}) =>
+    Math.round((300 + level * 100) * (dark ? 1.5 : 1) * (boss ? 2 : 1));
+  const BOSS_DEFEAT_BONUS = 1000;
+
   const GameLogic = {
+    levelBonus, BOSS_DEFEAT_BONUS,
     distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom, shouldGrantLife,
     QUALITY, shouldDowngrade, shouldUpgrade,
     stepToward, phantomStep, patrolLoop, monsterTypes,
+    isBossLevel, BOSS, bossNextPhase, dashDirection,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = GameLogic;
   else root.GameLogic = GameLogic;

@@ -4,7 +4,8 @@ import GameLogic from "../game-logic.cjs";
 
 const { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom, shouldGrantLife,
   QUALITY, shouldDowngrade, shouldUpgrade,
-  stepToward, phantomStep, patrolLoop, monsterTypes } = GameLogic;
+  stepToward, phantomStep, patrolLoop, monsterTypes,
+  isBossLevel, BOSS, bossNextPhase, dashDirection, levelBonus } = GameLogic;
 const I = Infinity;
 
 const maze = [
@@ -196,4 +197,42 @@ test("monsterTypes mantém o padrão antigo e adiciona Sentinela/Phantom por ní
   assert.equal(t12.filter((t) => t === "phantom").length, 2);
   assert.equal(t12.filter((t) => t === "sentinel").length, 2);
   assert.equal(monsterTypes(12, 2)[0], "wanderer");
+});
+
+test("isBossLevel só nos múltiplos de 10", () => {
+  assert.deepEqual([1, 5, 9, 10, 11, 20, 30].map(isBossLevel), [false, false, false, true, false, true, true]);
+});
+
+test("bossNextPhase cicla perseguir → telegrafar → investida → perseguir com a duração de cada fase", () => {
+  let p = { phase: "chase", until: 0 };
+  const seen = [];
+  for (let i = 0, now = 1000; i < 4; i++, now = p.until) {
+    p = bossNextPhase(p.phase, now);
+    seen.push(p.phase);
+    assert.equal(p.until - now, BOSS[p.phase]);
+  }
+  assert.deepEqual(seen, ["telegraph", "dash", "chase", "telegraph"]);
+});
+
+test("dashDirection vai reto no jogador alinhado e cai no caminho mais curto quando não está", () => {
+  const d = distancesFrom(ring, 1, 5);
+  assert.equal(dashDirection(ring, 1, 1, 1, 5, d), 3); // mesma linha, à direita
+  assert.equal(dashDirection(ring, 5, 1, 1, 1, distancesFrom(ring, 1, 1)), 0); // mesma coluna, acima
+  const far = distancesFrom(ring, 5, 5);
+  const dir = dashDirection(ring, 1, 3, 5, 5, far);
+  assert.equal(far[1 + [-1, 1, 0, 0][dir]][3 + [0, 0, -1, 1][dir]], far[1][3] - 1);
+});
+
+test("dashDirection não investe através de parede", () => {
+  // jogador na mesma coluna, mas com parede logo abaixo: segue o caminho
+  const d = distancesFrom(ring, 5, 3);
+  const dir = dashDirection(ring, 1, 3, 5, 3, d);
+  assert.notEqual(dir, 1);
+});
+
+test("levelBonus aplica escuro ×1,5 e chefe ×2 acumulados", () => {
+  assert.equal(levelBonus(1), 400);
+  assert.equal(levelBonus(3, { dark: true }), 900);
+  assert.equal(levelBonus(10, { boss: true }), 2600);
+  assert.equal(levelBonus(30, { dark: true, boss: true }), 9900);
 });
