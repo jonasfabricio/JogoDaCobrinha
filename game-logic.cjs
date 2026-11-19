@@ -49,7 +49,16 @@
   const shouldGrantLife = (completedLevel, lives, { every = 5, max = 3 } = {}) =>
     completedLevel > 0 && completedLevel % every === 0 && lives < max;
 
-  const GameLogic = { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom, shouldGrantLife };
+  // Qualidade adaptativa (tempos em segundos). Histerese: desce com média > 20 ms em 2 s,
+  // mas só sobe depois de 6 s seguidos de quadros < 12 ms — assim não fica oscilando.
+  const QUALITY = { maxLevel: 3, downAvg: 0.02, downWindow: 2, upFrame: 0.012, upWindow: 6 };
+  const shouldDowngrade = (level, avg, q = QUALITY) => level < q.maxLevel && avg > q.downAvg;
+  const shouldUpgrade = (level, goodTime, q = QUALITY) => level > 0 && goodTime >= q.upWindow;
+
+  const GameLogic = {
+    distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom, shouldGrantLife,
+    QUALITY, shouldDowngrade, shouldUpgrade,
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = GameLogic;
   else root.GameLogic = GameLogic;
 })(globalThis);

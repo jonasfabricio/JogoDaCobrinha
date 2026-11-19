@@ -146,21 +146,39 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
-// Qualidade adaptativa: se a média passar de ~20 ms por quadro, desce um degrau (nunca sobe de volta).
-const perf = { level: 0, frames: 0, time: 0 };
-function measureFrame(rawDt) {
-  if (!state.running || rawDt > 0.25) return; // ignora menus e a volta de uma aba escondida
+// Qualidade adaptativa: degrau 1 = resolução menor, 2 = sem bloom, 3 = sem sombras.
+// Desce quando a média fica lenta; sobe de volta depois de um trecho longo de quadros rápidos.
+const Q = GameLogic.QUALITY;
+const perf = { level: 0, frames: 0, time: 0, goodTime: 0, skipUntil: 0 };
+
+function setQuality(level) {
+  const down = level > perf.level;
+  perf.level = level;
+  const ratio = level >= 1 ? 1 : Math.min(devicePixelRatio, 1.5);
+  if (ratio !== pixelRatio) { pixelRatio = ratio; resize(); }
+  useBloom = level < 2;
+  sun.castShadow = level < 3;
+  console.info(down ? "Qualidade reduzida para manter a fluidez, degrau" : "Qualidade restaurada, degrau", level);
+}
+
+function measureFrame(rawDt, now) {
+  if (!state.running || now < perf.skipUntil) return; // menus e o início do nível (compilação de shaders)
+  if (rawDt > 0.25) { perf.goodTime = 0; return; } // volta de uma aba escondida ou travada isolada
+  perf.goodTime = rawDt < Q.upFrame ? perf.goodTime + rawDt : 0;
+  if (GameLogic.shouldUpgrade(perf.level, perf.goodTime)) {
+    setQuality(perf.level - 1);
+    perf.goodTime = perf.frames = perf.time = 0;
+    return;
+  }
   perf.frames++;
   perf.time += rawDt;
-  if (perf.time < 2) return;
-  const slow = perf.time / perf.frames > 0.02;
+  if (perf.time < Q.downWindow) return;
+  const avg = perf.time / perf.frames;
   perf.frames = perf.time = 0;
-  if (!slow || perf.level >= 3) return;
-  perf.level++;
-  if (perf.level === 1) { pixelRatio = 1; resize(); }
-  if (perf.level === 2) useBloom = false;
-  if (perf.level === 3) sun.castShadow = false;
-  console.info("Qualidade reduzida para manter a fluidez, degrau", perf.level);
+  if (GameLogic.shouldDowngrade(perf.level, avg)) {
+    setQuality(perf.level + 1);
+    perf.goodTime = 0;
+  }
 }
 
 const std = (color, emissive = 0x000000, emissiveIntensity = 1, extra = {}) =>
@@ -358,6 +376,7 @@ function startLevel() {
   if (level >= 5) Achievements.unlock("explorador");
   if (level >= 10) Achievements.unlock("mestre");
   state.startTime = performance.now();
+  Object.assign(perf, { frames: 0, time: 0, goodTime: 0, skipUntil: state.startTime + 500 }); // mantém o degrau atual
   tickAcc = 0;
   state.running = true;
   $("#overlay").hidden = true;
@@ -718,9 +737,9 @@ function nextStep(now) {
 renderer.setAnimationLoop(() => {
   const rawDt = clock.getDelta();
   const dt = Math.min(rawDt, 0.05);
-  measureFrame(rawDt);
   const t = clock.elapsedTime;
   const now = performance.now();
+  measureFrame(rawDt, now);
   const k = (speed) => 1 - Math.exp(-dt * speed);
 
   if (state.running) {
