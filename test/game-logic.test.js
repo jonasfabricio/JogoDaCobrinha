@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import GameLogic from "../game-logic.cjs";
 
-const { distancesFrom, createDistCache, cachedDistances } = GameLogic;
+const { distancesFrom, createDistCache, cachedDistances, nextTickAcc } = GameLogic;
 const I = Infinity;
 
 const maze = [
@@ -78,4 +78,13 @@ test("cachedDistances: resultado em cache é igual a uma chamada fresca", () => 
   const cache = createDistCache();
   cachedDistances(cache, maze, 1, 1);
   assert.deepEqual(cachedDistances(cache, maze, 1, 1), distancesFrom(maze, 1, 1));
+});
+
+test("nextTickAcc desconta um tick e mantém o resto", () => {
+  assert.equal(nextTickAcc(215, 200), 15);
+  assert.equal(nextTickAcc(200, 200), 0);
+});
+
+test("nextTickAcc abaixo do limiar não muda o acumulador", () => {
+  assert.equal(nextTickAcc(150, 200), 150);
 });
