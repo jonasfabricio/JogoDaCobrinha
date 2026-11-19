@@ -445,27 +445,35 @@ function move(i, now = performance.now()) {
   return true;
 }
 
+const opts = [], fwd = []; // reusados a cada tick para não alocar arrays por monstro
+
 function tickMonsters(now) {
   if (frozen(now)) return;
   const { maze, player } = state;
   const d = state.monsters.some((m) => m.hunter) ? distances(player.r, player.c) : null;
-  const at = (m, i) => [m.r + DIRS[i][0], m.c + DIRS[i][1]];
 
   for (const m of state.monsters) {
-    const opts = [0, 1, 2, 3].filter((i) => { const [r, c] = at(m, i); return maze[r][c] === FLOOR; });
+    opts.length = 0;
+    for (let i = 0; i < 4; i++) if (maze[m.r + DIRS[i][0]][m.c + DIRS[i][1]] === FLOOR) opts.push(i);
     if (!opts.length) continue;
     let pick;
     if (m.hunter && d[m.r][m.c] <= 10 && Math.random() < 0.8) {
       // caçador: segue o caminho mais curto até o jogador
-      pick = opts.reduce((a, b) => (d[at(m, b)[0]][at(m, b)[1]] < d[at(m, a)[0]][at(m, a)[1]] ? b : a));
+      let best = Infinity;
+      for (const i of opts) {
+        const v = d[m.r + DIRS[i][0]][m.c + DIRS[i][1]];
+        if (v < best) { best = v; pick = i; }
+      }
     } else {
       // andarilho: segue em frente, só volta se não houver opção
-      const fwd = opts.filter((i) => i !== (m.dir ^ 1));
+      fwd.length = 0;
+      for (const i of opts) if (i !== (m.dir ^ 1)) fwd.push(i);
       const pool = fwd.length ? fwd : opts;
       pick = pool[rand(pool.length)];
     }
     m.dir = pick;
-    [m.r, m.c] = at(m, pick);
+    m.r += DIRS[pick][0];
+    m.c += DIRS[pick][1];
     if (m.r === player.r && m.c === player.c) collide(m, now);
     if (!state.running) return;
   }
@@ -712,7 +720,8 @@ renderer.setAnimationLoop(() => {
 
   if (state.running) {
     tickAcc += dt * 1000;
-    if (tickAcc >= tickMs()) { tickAcc = 0; tickMonsters(now); }
+    const tm = tickMs();
+    if (tickAcc >= tm) { tickAcc = GameLogic.nextTickAcc(tickAcc, tm); tickMonsters(now); }
     const secs = Math.floor((now - state.startTime) / 1000);
     if (secs !== lastSecs) { lastSecs = secs; timeEl.textContent = fmt(secs); }
     if (state.combo > 1) {

@@ -34,7 +34,10 @@
     return cache.grid;
   }
 
-  const GameLogic = { distancesFrom, createDistCache, cachedDistances };
+  // Desconta um tick mantendo o resto fracionário (zerar faria os monstros atrasarem a cada quadro pesado).
+  const nextTickAcc = (acc, tickMs) => (acc >= tickMs ? acc - tickMs : acc);
+
+  const GameLogic = { distancesFrom, createDistCache, cachedDistances, nextTickAcc };
   if (typeof module !== "undefined" && module.exports) module.exports = GameLogic;
   else root.GameLogic = GameLogic;
 })(globalThis);
