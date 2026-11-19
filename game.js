@@ -257,13 +257,8 @@ function makeMonster(hunter) {
 const distCache = GameLogic.createDistCache();
 const distances = (r, c) => GameLogic.cachedDistances(distCache, state.maze, r, c);
 
-function freeCells(minDist = 0, from = state.player) {
-  const d = distances(from.r, from.c);
-  const out = [];
-  state.maze.forEach((row, r) => row.forEach((t, c) => {
-    if (t === FLOOR && d[r][c] >= minDist && !(r === 1 && c === 1)) out.push({ r, c });
-  }));
-  return shuffle(out);
+function freeCells(minDist = 0, from = state.player, distGrid = distances(from.r, from.c)) {
+  return shuffle(GameLogic.freeCellsFrom(state.maze, minDist, from, distGrid));
 }
 
 function startLevel() {
@@ -320,7 +315,8 @@ function startLevel() {
   world.userData.exit = exit;
 
   // monstros: quantidade cresce com nível e tamanho; caçadores a partir do nível 2
-  const spots = freeCells(Math.max(8, N * 0.6));
+  const fromStartD = distances(1, 1); // reusado por monstros, itens e chave
+  const spots = freeCells(Math.max(8, N * 0.6), state.player, fromStartD);
   const count = Math.min(1 + Math.floor(level * 0.8) + Math.floor(N / 14), 10, spots.length);
   state.monsters = spots.slice(0, count).map((p, i) => {
     const hunter = level >= 2 && i % 2 === 1;
@@ -331,7 +327,7 @@ function startLevel() {
   });
 
   // cristais e power-ups de congelamento
-  const items = freeCells(2);
+  const items = freeCells(2, state.player, fromStartD);
   const nGems = 3 + Math.floor(N / 5);
   state.gems = items.slice(0, nGems).map((p) => addItem(p, geo.gem, mat.gem));
   state.powers = items.slice(nGems, nGems + 1 + Math.floor(N / 20)).map((p) => addItem(p, geo.power, mat.power));
@@ -343,7 +339,7 @@ function startLevel() {
   state.hasKey = !state.keyNeeded;
   state.key = null;
   if (state.keyNeeded) {
-    const spot = pickKeySpot();
+    const spot = pickKeySpot(fromStartD);
     const mesh = makeKey();
     place(mesh, spot.r, spot.c, 0.45);
     world.add(mesh);
@@ -372,16 +368,16 @@ function startLevel() {
 
 // Casa da chave: longe do início (≥ 50% da maior distância) e não colada na saída (≥ N/3),
 // sem cair em cima de cristal/floco. Se o labirinto não tiver uma casa assim, relaxa as regras.
-function pickKeySpot() {
+function pickKeySpot(fromStart) {
   const { N, maze } = state;
   const start = { r: 1, c: 1 };
-  const fromStart = distances(1, 1), fromExit = distances(N - 2, N - 2);
+  const fromExit = distances(N - 2, N - 2);
   let far = 0;
   maze.forEach((row, r) => row.forEach((t, c) => { if (t === FLOOR) far = Math.max(far, fromStart[r][c]); }));
   const taken = new Set([...state.gems, ...state.powers].map((it) => it.r * N + it.c));
   const free = (p) => !taken.has(p.r * N + p.c);
-  const candidates = freeCells(far * 0.5, start);
-  return candidates.find((p) => free(p) && fromExit[p.r][p.c] >= N / 3) ?? candidates.find(free) ?? freeCells(1, start)[0];
+  const candidates = freeCells(far * 0.5, start, fromStart);
+  return candidates.find((p) => free(p) && fromExit[p.r][p.c] >= N / 3) ?? candidates.find(free) ?? freeCells(1, start, fromStart)[0];
 }
 
 // Portal trancado: anel apagado com borda vermelha, sem feixe nem luz.
