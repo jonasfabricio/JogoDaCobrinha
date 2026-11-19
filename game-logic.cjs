@@ -21,7 +21,20 @@
     return d;
   }
 
-  const GameLogic = { distancesFrom };
+  const createDistCache = () => ({ r: -1, c: -1, maze: null, grid: null });
+
+  // O labirinto nunca é alterado dentro de um nível: a identidade do array basta para invalidar.
+  function cachedDistances(cache, maze, r, c) {
+    if (cache.maze !== maze || cache.r !== r || cache.c !== c) {
+      cache.grid = distancesFrom(maze, r, c);
+      cache.maze = maze;
+      cache.r = r;
+      cache.c = c;
+    }
+    return cache.grid;
+  }
+
+  const GameLogic = { distancesFrom, createDistCache, cachedDistances };
   if (typeof module !== "undefined" && module.exports) module.exports = GameLogic;
   else root.GameLogic = GameLogic;
 })(globalThis);

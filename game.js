@@ -254,7 +254,8 @@ function makeMonster(hunter) {
 }
 
 /* ---------- Construção do nível ---------- */
-const distances = (r, c) => GameLogic.distancesFrom(state.maze, r, c);
+const distCache = GameLogic.createDistCache();
+const distances = (r, c) => GameLogic.cachedDistances(distCache, state.maze, r, c);
 
 function freeCells(minDist = 0, from = state.player) {
   const d = distances(from.r, from.c);
@@ -447,7 +448,7 @@ function move(i, now = performance.now()) {
 function tickMonsters(now) {
   if (frozen(now)) return;
   const { maze, player } = state;
-  const d = distances(player.r, player.c);
+  const d = state.monsters.some((m) => m.hunter) ? distances(player.r, player.c) : null;
   const at = (m, i) => [m.r + DIRS[i][0], m.c + DIRS[i][1]];
 
   for (const m of state.monsters) {

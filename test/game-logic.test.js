@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import GameLogic from "../game-logic.cjs";
 
-const { distancesFrom } = GameLogic;
+const { distancesFrom, createDistCache, cachedDistances } = GameLogic;
 const I = Infinity;
 
 const maze = [
@@ -48,4 +48,34 @@ test("distancesFrom não altera o labirinto recebido", () => {
   const copy = maze.map((row) => [...row]);
   distancesFrom(maze, 1, 1);
   assert.deepEqual(maze, copy);
+});
+
+test("cachedDistances: mesma posição e mesmo labirinto devolvem o mesmo grid", () => {
+  const cache = createDistCache();
+  const a = cachedDistances(cache, maze, 1, 1);
+  assert.equal(cachedDistances(cache, maze, 1, 1), a);
+});
+
+test("cachedDistances: posição diferente recomputa", () => {
+  const cache = createDistCache();
+  const a = cachedDistances(cache, maze, 1, 1);
+  const b = cachedDistances(cache, maze, 3, 3);
+  assert.notEqual(b, a);
+  assert.deepEqual(b, distancesFrom(maze, 3, 3));
+});
+
+test("cachedDistances: labirinto novo (outra referência) recomputa", () => {
+  const cache = createDistCache();
+  const a = cachedDistances(cache, maze, 1, 1);
+  const other = maze.map((row) => [...row]);
+  other[2][3] = 1;
+  const b = cachedDistances(cache, other, 1, 1);
+  assert.notEqual(b, a);
+  assert.equal(b[3][3], Infinity);
+});
+
+test("cachedDistances: resultado em cache é igual a uma chamada fresca", () => {
+  const cache = createDistCache();
+  cachedDistances(cache, maze, 1, 1);
+  assert.deepEqual(cachedDistances(cache, maze, 1, 1), distancesFrom(maze, 1, 1));
 });
