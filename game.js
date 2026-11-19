@@ -109,17 +109,21 @@ scene.add(playerLight);
 // e portal continuam visíveis porque têm brilho próprio (emissivo). No escuro a neblina acompanha a
 // distância da câmera (ver loop). Como a câmera olha de cima, um ponto do chão a h casas do jogador
 // fica só ~h²/(2·dist) mais longe que ele; por isso a faixa da neblina é bem estreita.
-const DARK_FOG = [0, 1.6]; // começa a escurecer junto do jogador e some por completo a ~5-6 casas
+// `follow`: neblina presa à distância da câmera (ver loop) — escuro: some por completo a ~5-6 casas;
+// neblina densa (modificador): tudo claro, mas só se vê ~3-4 casas em volta.
 const LIGHTING = {
   normal: { hemi: 1.1, sun: 1.8, fog: [16, 42], bg: 0x050b1f, lamp: [4, 7], glow: [0.5, 0.9] },
-  dark: { hemi: 0.05, sun: 0.04, fog: null, bg: 0x010309, lamp: [9, 4.5], glow: [0, 0.02] },
+  dark: { hemi: 0.05, sun: 0.04, follow: [0, 1.6], bg: 0x010309, lamp: [9, 4.5], glow: [0, 0.02] },
+  dense: { hemi: 1, sun: 1.4, follow: [-0.5, 1.2], bg: 0x1e2a44, lamp: [5, 6], glow: [0.4, 0.8] },
 };
-function applyLighting(dark) {
-  const L = dark ? LIGHTING.dark : LIGHTING.normal;
+let fogFollow = null;
+function applyLighting(profile) {
+  const L = LIGHTING[profile];
   hemi.intensity = L.hemi;
   sun.intensity = L.sun;
-  [mat.wall.emissiveIntensity, mat.cap.emissiveIntensity] = L.glow; // paredes param de brilhar sozinhas
+  [mat.wall.emissiveIntensity, mat.cap.emissiveIntensity] = L.glow; // no escuro as paredes param de brilhar sozinhas
   if (L.fog) [scene.fog.near, scene.fog.far] = L.fog;
+  fogFollow = L.follow ?? null;
   scene.fog.color.setHex(L.bg);
   scene.background.setHex(L.bg);
   [playerLight.intensity, playerLight.distance] = L.lamp;
@@ -301,7 +305,12 @@ function startLevel() {
   state.maze = generateMaze(N);
   state.player = { r: 1, c: 1 };
   state.dark = level >= 3 && level % 3 === 0; // níveis 3, 6, 9… são no escuro
-  applyLighting(state.dark);
+  state.modifier = GameLogic.levelModifier(level);
+  state.mirrorUntil = state.modifier === "mirror" ? performance.now() + GameLogic.MIRROR_MS : 0;
+  state.noFlake = state.modifier === "noFlake";
+  state.denseFog = state.modifier === "denseFog";
+  applyLighting(state.dark ? "dark" : state.denseFog ? "dense" : "normal");
+  $("#fog").classList.toggle("on", state.denseFog);
 
   // limpa o mundo anterior
   scene.remove(world);
@@ -376,7 +385,7 @@ function startLevel() {
   const items = freeCells(2, state.player, fromStartD);
   const nGems = 3 + Math.floor(N / 5);
   state.gems = items.slice(0, nGems).map((p) => addItem(p, geo.gem, mat.gem));
-  state.powers = items.slice(nGems, nGems + 1 + Math.floor(N / 20)).map((p) => addItem(p, geo.power, mat.power));
+  state.powers = state.noFlake ? [] : items.slice(nGems, nGems + 1 + Math.floor(N / 20)).map((p) => addItem(p, geo.power, mat.power));
   state.gemsTotal = nGems;
   state.gemsGot = 0;
 
@@ -413,7 +422,8 @@ function startLevel() {
   state.lifeGranted = false;
   const intro = state.bossLevel ? `👑 Nível ${level}: CHEFE! Fuja pelo portal${state.dark ? " · no escuro" : ""}`
     : state.dark ? `🌑 Nível ${level} no escuro · só sua lanterna ilumina` : `Nível ${level} · ${N}×${N}`;
-  toast(life + intro);
+  const mod = MODIFIER_TEXT[state.modifier];
+  toast(life + intro + (mod ? ` · ${mod}` : ""), mod ? 4000 : 1800);
   hud();
 }
 
@@ -728,13 +738,18 @@ function renderCombo(bump) {
 }
 
 let toastTimer = 0;
-function toast(text) {
+function toast(text, ms = 1800) {
   const el = $("#toast");
   el.textContent = text;
   el.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+  toastTimer = setTimeout(() => el.classList.remove("show"), ms);
 }
+const MODIFIER_TEXT = {
+  mirror: `🪞 Espelhado: controles invertidos por ${GameLogic.MIRROR_MS / 1000} s`,
+  noFlake: "🚫 Sem floco ❄ neste nível",
+  denseFog: "🌫 Neblina densa: visão curta",
+};
 
 let overlayAction = null;
 function overlay(eyebrow, title, html, btn, action) {
@@ -783,21 +798,36 @@ function release(i) {
 }
 const releaseAll = () => (keysDown.length = 0);
 
+// Modificador "espelhado": no início do nível as direções saem invertidas (cima↔baixo, esquerda↔direita).
+// Cada tecla/botão lembra a direção com que foi apertado, para soltar a certa mesmo se o espelho acabar no meio.
+const inputDir = (i) => (performance.now() < state.mirrorUntil ? i ^ 1 : i);
+const held = new Map();
+
 addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return; // não roubar teclas enquanto digita email/senha
-  if (e.key.toLowerCase() === "m" && !e.repeat) return Sfx.toggleMute();
-  const i = KEYS[e.key.toLowerCase()];
+  const key = e.key.toLowerCase();
+  if (key === "m" && !e.repeat) return Sfx.toggleMute();
+  const i = KEYS[key];
   if (i === undefined) return;
   e.preventDefault();
-  if (!e.repeat) press(i);
+  if (e.repeat) return;
+  const dir = inputDir(i);
+  held.set(key, dir);
+  press(dir);
 });
-addEventListener("keyup", (e) => release(KEYS[e.key.toLowerCase()]));
-addEventListener("blur", releaseAll);
+addEventListener("keyup", (e) => {
+  const key = e.key.toLowerCase();
+  if (KEYS[key] === undefined) return;
+  release(held.get(key) ?? KEYS[key]);
+  held.delete(key);
+});
+addEventListener("blur", () => { held.clear(); releaseAll(); });
 
 document.querySelectorAll(".pad button").forEach((b) => {
   const i = Number(b.dataset.dir);
-  b.addEventListener("pointerdown", (e) => { e.preventDefault(); press(i); });
-  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => release(i));
+  let dir = i;
+  b.addEventListener("pointerdown", (e) => { e.preventDefault(); dir = inputDir(i); press(dir); });
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => release(dir));
 });
 
 // swipe na tela
@@ -808,7 +838,7 @@ $("#scene").addEventListener("pointerup", (e) => {
   const dx = e.clientX - touchStart.x, dy = e.clientY - touchStart.y;
   touchStart = null;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
-  const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 3 : 2) : (dy > 0 ? 1 : 0);
+  const dir = inputDir(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 3 : 2) : (dy > 0 ? 1 : 0));
   press(dir);
   release(dir); // swipe é um toque: vale como curva antecipada, não como tecla segurada
 });
@@ -851,6 +881,7 @@ renderer.setAnimationLoop(() => {
     tickAcc += dt * 1000;
     const tm = tickMs();
     if (tickAcc >= tm) { tickAcc = GameLogic.nextTickAcc(tickAcc, tm); tickMonsters(now); }
+    if (state.mirrorUntil && now >= state.mirrorUntil) { state.mirrorUntil = 0; toast("🪞 Controles normais de novo"); }
     const secs = Math.floor((now - state.startTime) / 1000);
     if (secs !== lastSecs) { lastSecs = secs; timeEl.textContent = fmt(secs); }
     if (state.combo > 1) {
@@ -916,10 +947,10 @@ renderer.setAnimationLoop(() => {
 
   // câmera segue o jogador, com mergulho inicial e tremor ao levar dano
   camH += (9 - camH) * k(1.6);
-  if (state.dark) {
+  if (fogFollow) {
     const camDist = camH * Math.hypot(1, 0.55); // distância câmera → jogador
-    scene.fog.near = camDist + DARK_FOG[0];
-    scene.fog.far = camDist + DARK_FOG[1];
+    scene.fog.near = camDist + fogFollow[0];
+    scene.fog.far = camDist + fogFollow[1];
   }
   shake *= Math.exp(-dt * 6);
   // segue só x/z: o "quique" do jogador não balança a câmera
