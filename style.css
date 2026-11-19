@@ -105,6 +105,18 @@ button.icon { width: 40px; height: 40px; font-size: 20px; padding: 0; }
 }
 .flash.on { opacity: 1; transition: none; }
 
+/* Neblina densa (modificador): a neblina 3D só cobre o lado longe da câmera; este véu fecha a visão
+   em volta do jogador (que fica sempre no centro da tela) em todas as direções, na cor da neblina. */
+.fog-veil {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle, transparent 14vmin, rgba(30, 42, 68, 0.97) 36vmin);
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+.fog-veil.on { opacity: 1; }
+
 /* Overlay */
 .overlay {
   position: fixed;

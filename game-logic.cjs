@@ -139,6 +139,20 @@
     return stepToward(dist, maze, r, c);
   }
 
+  /* ---------- Modificadores de nível ---------- */
+
+  // Um a cada 3 níveis a partir do 4 (4, 7, 13, 16…), em rodízio. Esses níveis nunca são escuros
+  // (múltiplos de 3), então a neblina densa não se soma ao escuro; níveis-chefe ficam sem modificador.
+  const MODIFIERS = ["mirror", "noFlake", "denseFog"];
+  const MIRROR_MS = 8000;
+  const hasModifier = (level) => level >= 4 && level % 3 === 1 && !isBossLevel(level);
+  function levelModifier(level) {
+    if (!hasModifier(level)) return null;
+    let k = 0;
+    for (let l = 4; l < level; l++) if (hasModifier(l)) k++;
+    return MODIFIERS[k % MODIFIERS.length];
+  }
+
   // Bônus ao concluir o nível: escuro ×1,5 e chefe ×2 (acumulam; o nível 30 é os dois).
   const levelBonus = (level, { dark = false, boss = false } = {}) =>
     Math.round((300 + level * 100) * (dark ? 1.5 : 1) * (boss ? 2 : 1));
@@ -150,6 +164,7 @@
     QUALITY, shouldDowngrade, shouldUpgrade,
     stepToward, phantomStep, patrolLoop, monsterTypes,
     isBossLevel, BOSS, bossNextPhase, dashDirection,
+    MODIFIERS, MIRROR_MS, levelModifier,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = GameLogic;
   else root.GameLogic = GameLogic;

@@ -5,7 +5,8 @@ import GameLogic from "../game-logic.cjs";
 const { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom, shouldGrantLife,
   QUALITY, shouldDowngrade, shouldUpgrade,
   stepToward, phantomStep, patrolLoop, monsterTypes,
-  isBossLevel, BOSS, bossNextPhase, dashDirection, levelBonus } = GameLogic;
+  isBossLevel, BOSS, bossNextPhase, dashDirection, levelBonus,
+  MODIFIERS, levelModifier } = GameLogic;
 const I = Infinity;
 
 const maze = [
@@ -235,4 +236,22 @@ test("levelBonus aplica escuro ×1,5 e chefe ×2 acumulados", () => {
   assert.equal(levelBonus(3, { dark: true }), 900);
   assert.equal(levelBonus(10, { boss: true }), 2600);
   assert.equal(levelBonus(30, { dark: true, boss: true }), 9900);
+});
+
+test("levelModifier: um a cada 3 níveis a partir do 4, em rodízio, pulando o nível-chefe", () => {
+  const got = {};
+  for (let l = 1; l <= 31; l++) if (levelModifier(l)) got[l] = levelModifier(l);
+  assert.deepEqual(got, { 4: "mirror", 7: "noFlake", 13: "denseFog", 16: "mirror", 19: "noFlake", 22: "denseFog", 25: "mirror", 28: "noFlake", 31: "denseFog" });
+});
+
+test("levelModifier nunca cai em nível escuro nem em nível-chefe e usa todos os modificadores", () => {
+  const seen = new Set();
+  for (let l = 1; l <= 200; l++) {
+    const m = levelModifier(l);
+    if (!m) continue;
+    seen.add(m);
+    assert.notEqual(l % 3, 0, `nível ${l} é escuro`);
+    assert.equal(isBossLevel(l), false, `nível ${l} é chefe`);
+  }
+  assert.deepEqual([...seen].sort(), [...MODIFIERS].sort());
 });
