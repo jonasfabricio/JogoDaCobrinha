@@ -1,6 +1,6 @@
 // Lógica pura do jogo, sem DOM/Three.js: roda no navegador (globalThis.GameLogic) e no Node (require).
 (function (root) {
-  const WALL = 1;
+  const WALL = 1, FLOOR = 0;
   const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 
   function distancesFrom(maze, sr, sc) {
@@ -37,7 +37,16 @@
   // Desconta um tick mantendo o resto fracionário (zerar faria os monstros atrasarem a cada quadro pesado).
   const nextTickAcc = (acc, tickMs) => (acc >= tickMs ? acc - tickMs : acc);
 
-  const GameLogic = { distancesFrom, createDistCache, cachedDistances, nextTickAcc };
+  // Casas de chão a pelo menos minDist de `from` (exceto o início 1,1), em ordem de leitura.
+  function freeCellsFrom(maze, minDist, from, distGrid = distancesFrom(maze, from.r, from.c)) {
+    const out = [];
+    maze.forEach((row, r) => row.forEach((t, c) => {
+      if (t === FLOOR && distGrid[r][c] >= minDist && !(r === 1 && c === 1)) out.push({ r, c });
+    }));
+    return out;
+  }
+
+  const GameLogic = { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom };
   if (typeof module !== "undefined" && module.exports) module.exports = GameLogic;
   else root.GameLogic = GameLogic;
 })(globalThis);

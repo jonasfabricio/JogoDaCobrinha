@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import GameLogic from "../game-logic.cjs";
 
-const { distancesFrom, createDistCache, cachedDistances, nextTickAcc } = GameLogic;
+const { distancesFrom, createDistCache, cachedDistances, nextTickAcc, freeCellsFrom } = GameLogic;
 const I = Infinity;
 
 const maze = [
@@ -87,4 +87,17 @@ test("nextTickAcc desconta um tick e mantém o resto", () => {
 
 test("nextTickAcc abaixo do limiar não muda o acumulador", () => {
   assert.equal(nextTickAcc(150, 200), 150);
+});
+
+test("freeCellsFrom com distGrid pré-computado == computado internamente", () => {
+  const start = { r: 1, c: 1 };
+  const grid = distancesFrom(maze, 1, 1);
+  for (const min of [0, 2, 4, 99]) {
+    assert.deepEqual(freeCellsFrom(maze, min, start, grid), freeCellsFrom(maze, min, start));
+  }
+});
+
+test("freeCellsFrom respeita a distância mínima e ignora início, paredes e saída", () => {
+  const cells = freeCellsFrom(maze, 3, { r: 1, c: 1 });
+  assert.deepEqual(cells, [{ r: 2, c: 3 }, { r: 3, c: 1 }, { r: 3, c: 2 }]);
 });
